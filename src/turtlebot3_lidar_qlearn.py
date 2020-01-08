@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from gazebo_turtlebot3 import GazeboTurtlebot3Env
+from gazebo_turtlebot3_qlearn import GazeboTurtlebot3QLearnEnv
 
 import time
 import numpy
@@ -14,7 +14,7 @@ class QLearn:
     def __init__(self, actions, epsilon, alpha, gamma):
         self.q = {}
         self.epsilon = epsilon  # exploration constant
-        self.alpha = alpha      # discount constant
+        self.alpha = alpha      # learning rate
         self.gamma = gamma      # discount factor
         self.actions = actions
 
@@ -64,18 +64,17 @@ class QLearn:
 
 
 if __name__ == '__main__':
-    print("Starting...")
-
-    env = GazeboTurtlebot3Env()
+    # Get environment
+    env = GazeboTurtlebot3QLearnEnv()
 
     last_time_steps = numpy.ndarray(0)
-
+    # Create q  learning object
     qlearn = QLearn(actions=range(env.action_space.n),
                     alpha=0.1, gamma=0.8, epsilon=0.9)
 
     initial_epsilon = qlearn.epsilon
 
-    epsilon_discount = 0.999  # 1098 eps to reach 0.1
+    epsilon_discount = 0.999
 
     start_time = time.time()
     total_episodes = 10000
@@ -87,7 +86,7 @@ if __name__ == '__main__':
         cumulated_reward = 0  # Should going forward give more reward then L/R ?
 
         observation = env.reset()
-
+        # Minimum epsilon is 0.05
         if qlearn.epsilon > 0.05:
             qlearn.epsilon *= epsilon_discount
 

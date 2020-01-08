@@ -44,11 +44,11 @@ class GazeboTurtlebot3DQLearnEnv():
         except Exception:
             print ("/gazebo/unpause_physics service call failed")
 
-        max_ang_speed = 0.3
+        max_ang_speed = 0.9
         ang_vel = (action-10)*max_ang_speed*0.1 #from (-0.33 to + 0.33)
 
         vel_cmd = Twist()
-        vel_cmd.linear.x = 0.2
+        vel_cmd.linear.x = 0.4
         vel_cmd.angular.z = ang_vel
         self.vel_pub.publish(vel_cmd)
         data = None
