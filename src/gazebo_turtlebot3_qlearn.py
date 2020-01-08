@@ -12,15 +12,17 @@ from sensor_msgs.msg import LaserScan
 from gym.utils import seeding
 
 class GazeboTurtlebot3QLearnEnv():
-
     def __init__(self):
+        # initialize as ros node
         rospy.init_node('gazebo_qlearning_node', anonymous=True)
 
+        # connections with gazebo
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
+        # action space contains three element Left Right And Forward
         self.action_space = spaces.Discrete(3) #F,L,R
         self.reward_range = (-np.inf, np.inf)
 
@@ -57,17 +59,17 @@ class GazeboTurtlebot3QLearnEnv():
 
         if action == 0: #FORWARD
             vel_cmd = Twist()
-            vel_cmd.linear.x = 1.0
+            vel_cmd.linear.x = 0.5
             vel_cmd.angular.z = 0.0
             self.vel_pub.publish(vel_cmd)
         elif action == 1: #LEFT
             vel_cmd = Twist()
-            vel_cmd.linear.x = 0.3
+            vel_cmd.linear.x = 0.2
             vel_cmd.angular.z = 1.0
             self.vel_pub.publish(vel_cmd)
         elif action == 2: #RIGHT
             vel_cmd = Twist()
-            vel_cmd.linear.x = 0.3
+            vel_cmd.linear.x = 0.2
             vel_cmd.angular.z = -1.0
             self.vel_pub.publish(vel_cmd)
 
@@ -114,6 +116,7 @@ class GazeboTurtlebot3QLearnEnv():
         except Exception:
             print("/gazebo/unpause_physics service call failed")
         
+        # Get laser data
         data = None
         while data is None:
             try:
@@ -122,12 +125,14 @@ class GazeboTurtlebot3QLearnEnv():
                 print("/scan Error laser data is empty!")
                 time.sleep(5)
 
+        # Pause simulation
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
             self.pause()
         except Exception:
             print("/gazebo/pause_physics service call failed")
 
+        # 
         state = self.discretize_observation(data,5) 
 
         return state
