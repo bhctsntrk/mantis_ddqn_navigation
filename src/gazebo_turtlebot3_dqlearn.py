@@ -9,8 +9,6 @@ from std_srvs.srv import Empty
 
 from sensor_msgs.msg import LaserScan
 
-from gym.utils import seeding
-
 class GazeboTurtlebot3DQLearnEnv():
 
     def __init__(self):
@@ -21,10 +19,6 @@ class GazeboTurtlebot3DQLearnEnv():
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
-        self.reward_range = (-np.inf, np.inf)
-
-        self.seed()
-
     def calculate_observation(self,data):
         min_range = 0.2
         done = False
@@ -32,10 +26,6 @@ class GazeboTurtlebot3DQLearnEnv():
             if (min_range > data.ranges[i] > 0):
                 done = True
         return data.ranges,done
-
-    def seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
 
     def step(self, action):
         rospy.wait_for_service('/gazebo/unpause_physics')

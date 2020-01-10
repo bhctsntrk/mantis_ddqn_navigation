@@ -44,6 +44,11 @@ class DeepQ:
         self.learnStart = learnStart
         self.learningRate = learningRate
 
+        try:
+            os.mkdir("/tmp/gazebo_gym_experiments/")
+        except Exception:
+            pass
+
     def initNetworks(self, hiddenLayers):
         model = self.createModel(self.input_size, self.output_size, hiddenLayers, "relu", self.learningRate)
         self.model = model
@@ -70,7 +75,7 @@ class DeepQ:
             else :
                 model.add(Activation(activationType))
             
-            for index in range(1, len(hiddenLayers)):
+            for index in range(len(hiddenLayers)):
                 layerSize = hiddenLayers[index]
                 if regularizationFactor > 0:
                     model.add(Dense(layerSize, init='lecun_uniform', W_regularizer=l2(regularizationFactor), bias=bias))
@@ -280,7 +285,7 @@ if __name__ == '__main__':
         learningRate = 0.00025
         discountFactor = 0.99
         memorySize = 1000000
-        network_inputs = 360
+        network_inputs = 100
         network_outputs = 21
         network_structure = [300,300]
         current_epoch = 0
