@@ -84,7 +84,7 @@ class GazeboTurtlebot3DQLearnEnv():
             if action == 0:
                 reward = 5
             else:
-                reward = 4
+                reward = 1
         else:
             reward = -200
 
