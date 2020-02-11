@@ -35,8 +35,6 @@ class GazeboTurtlebot3CameraNnEnv():
 
         self.seed()
 
-        self.bridge = CvBridge()
-
         self.last50actions = [0] * 50
 
         self.img_rows = 32
@@ -106,13 +104,9 @@ class GazeboTurtlebot3CameraNnEnv():
                 h = image_data.height
                 w = image_data.width
 
-                try:
-                    cv_image = self.bridge.imgmsg_to_cv2(image_data, "bgr8")
-                except Exception as e:
-                    print(e.msg)
-
-            except Exception:
-                print("/camera/rgb/image_raw Error image data is empty!! 0")
+                cv_image = CvBridge().imgmsg_to_cv2(image_data, "bgr8")
+            except Exception as e:
+                print(str(e))
                 time.sleep(5)
 
         rospy.wait_for_service('/gazebo/pause_physics')
@@ -212,13 +206,11 @@ class GazeboTurtlebot3CameraNnEnv():
                 image_data = rospy.wait_for_message('/camera/rgb/image_raw', Image, timeout=5)
                 h = image_data.height
                 w = image_data.width
-                try:
-                    cv_image = self.bridge.imgmsg_to_cv2(image_data, "bgr8")
-                except Exception as e:
-                    print(e.msg)
 
-            except Exception:
-                print("/camera/rgb/image_raw Error image data is empty!")
+                cv_image = CvBridge().imgmsg_to_cv2(image_data, "bgr8")
+
+            except Exception as e:
+                print(str(e))
                 time.sleep(5)
 
         rospy.wait_for_service('/gazebo/pause_physics')
@@ -231,7 +223,6 @@ class GazeboTurtlebot3CameraNnEnv():
         '''x_t = skimage.color.rgb2gray(cv_image)
         x_t = skimage.transform.resize(x_t,(32,32))
         x_t = skimage.exposure.rescale_intensity(x_t,out_range=(0,255))'''
-
         cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
         cv_image = cv2.resize(cv_image, (self.img_rows, self.img_cols))
         #cv_image = cv_image[(self.img_rows/20):self.img_rows-(self.img_rows/20),(self.img_cols/10):self.img_cols] #crop image

@@ -217,6 +217,11 @@ if __name__ == '__main__':
     env = GazeboTurtlebot3CameraNnEnv()
     outdir = '/tmp/gazebo_gym_experiments/'
 
+    try:
+        os.mkdir("/tmp/gazebo_gym_experiments/")
+    except Exception:
+        pass
+
     continue_execution = False
     #fill this if continue_execution=True
     weights_path = '/tmp/turtle_c2c_dqn_ep200.h5' 

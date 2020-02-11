@@ -47,4 +47,5 @@ cd ../../
 # Build
 catkin build cv_bridge
 # Extend environment with new package
+# Note you must add this to bashrc
 source install/setup.bash --extend
