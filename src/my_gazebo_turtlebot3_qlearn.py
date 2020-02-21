@@ -3,75 +3,52 @@ import roslaunch
 import time
 import numpy as np
 import math
-
-from random import randint
+import random
 
 from gym import spaces
 from geometry_msgs.msg import Twist
-from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
 
 from sensor_msgs.msg import LaserScan
 
-from gym.utils import seeding
-
 class GazeboTurtlebot3DQLearnEnv():
 
     def __init__(self):
-        # Initialize the node
+        # Launch the simulation with the given launchfile name
         rospy.init_node('gazebo_dqlearning_node', anonymous=True)
-        # Connect to gazebo
         self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=5)
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
-        self.laser_point_count = 180  # 360 laser point in one time
-        self.min_crash_range = 0.2  # Make done = True if agent close to wall 
-        self.action_space = 3  # F,L,R
-
         self.oldDistance = 0
 
     def calculate_observation(self,data):
-        # Detect crash
-        done = False
+        min_range = 0.2
+        isCrash = False
         for i, item in enumerate(data.ranges):
-            if (self.min_crash_range > data.ranges[i] > 0):
-                done = True
-        return data.ranges,done
-
-    def randomAction(self):
-        # return an action from 0 to 2 randomly
-        return randint(0,2)
+            if (min_range > data.ranges[i] > 0):
+                isCrash = True
+        return data.ranges,isCrash
 
     def step(self, action):
-
         rospy.wait_for_service('/gazebo/unpause_physics')
         try:
             self.unpause()
         except Exception:
-            print("/gazebo/unpause_physics service call failed")
+            print ("/gazebo/unpause_physics service call failed")
 
-        if action == 0: #FORWARD
-            vel_cmd = Twist()
-            vel_cmd.linear.x = 0.5
-            vel_cmd.angular.z = 0.0
-            self.vel_pub.publish(vel_cmd)
-        elif action == 1: #LEFT
-            vel_cmd = Twist()
-            vel_cmd.linear.x = 0.2
-            vel_cmd.angular.z = 1.0
-            self.vel_pub.publish(vel_cmd)
-        elif action == 2: #RIGHT
-            vel_cmd = Twist()
-            vel_cmd.linear.x = 0.2
-            vel_cmd.angular.z = -1.0
-            self.vel_pub.publish(vel_cmd)
+        max_ang_speed = 0.9
+        ang_vel = (action-10)*max_ang_speed*0.1 #from (-0.33 to + 0.33)
 
-        laserData = None
-        while laserData is None:
+        vel_cmd = Twist()
+        vel_cmd.linear.x = 0.4
+        vel_cmd.angular.z = ang_vel
+        self.vel_pub.publish(vel_cmd)
+        data = None
+        while data is None:
             try:
-                laserData = rospy.wait_for_message('/scan', LaserScan, timeout=5)
+                data = rospy.wait_for_message('/scan', LaserScan, timeout=5)
             except Exception:
                 print("/scan Error laser data is empty!")
                 time.sleep(5)
@@ -83,35 +60,46 @@ class GazeboTurtlebot3DQLearnEnv():
             except Exception:
                 print("/odom Error odom data is empty!")
                 time.sleep(5)
-            
+
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
+            #resp_pause = pause.call()
             self.pause()
         except Exception:
-            print("/gazebo/pause_physics service call failed")
+            print ("/gazebo/pause_physics service call failed")
 
-        state,done = self.calculate_observation(laserData)
+        state, isCrash = self.calculate_observation(data)
 
-        # Calculate target distance
-        targetX = 0.5
-        targetY = -3.5
+        if isCrash:
+            done = True
+
+        xLimits = [-1.4, 2.192]
+        yLimits = [-2.603, 0.47]
+
+        targetX = random.uniform(*xLimits)
+        targetY = random.uniform(*yLimits)
         myX = odomData.pose.pose.position.x
         myY = odomData.pose.pose.position.y
 
         self.newDistance = math.sqrt((targetX - myX)**2 + (targetY - myY)**2)
+
+        if self.newDistance < 0.2:
+            done = True
 
         if self.oldDistance > self.newDistance:
             distanceAward = 2
         else:
             distanceAward = -2
 
-        if not done:
-            if action == 0:
-                reward = 2 + distanceAward
-            else:
-                reward = 1 + distanceAward
-        else:
+        if isCrash:
             reward = -200
+        elif done:
+            # Reached to target
+            rospy.logerr("uuuuuuuuuuuuuuuuuuuuuuuu")
+            reward = 200
+        else:
+            # Negative reward for fooling around more negative reward for turn around
+            reward = -abs(ang_vel) - 1
 
         self.oldDistance = self.newDistance
 
@@ -134,10 +122,10 @@ class GazeboTurtlebot3DQLearnEnv():
         except Exception:
             print ("/gazebo/unpause_physics service call failed")
         #read laser data
-        laserData = None
-        while laserData is None:
+        data = None
+        while data is None:
             try:
-                laserData = rospy.wait_for_message('/scan', LaserScan, timeout=5)
+                data = rospy.wait_for_message('/scan', LaserScan, timeout=5)
             except Exception:
                 print("/scan Error laser data is empty!")
                 time.sleep(5)
@@ -149,6 +137,6 @@ class GazeboTurtlebot3DQLearnEnv():
         except Exception:
             print ("/gazebo/pause_physics service call failed")
 
-        state, done = self.calculate_observation(laserData)
+        state, isCrash = self.calculate_observation(data)
 
         return np.asarray(state)
