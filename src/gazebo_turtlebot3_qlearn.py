@@ -24,7 +24,7 @@ class GazeboTurtlebot3QLearnEnv():
 
         # action space contains three element Left Right And Forward
         self.action_space = spaces.Discrete(3) #F,L,R
-        self.reward_range = (-np.inf, np.inf)
+        #self.reward_range = (-np.inf, np.inf)
 
         self.seed()
 
