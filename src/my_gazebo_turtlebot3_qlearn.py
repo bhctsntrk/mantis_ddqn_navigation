@@ -23,28 +23,47 @@ class GazeboTurtlebot3DQLearnEnv():
 
         self.oldDistance = 0
 
-    def calculate_observation(self,data):
+    def discretize_observation(self,data):
+        discretized_ranges = []
         min_range = 0.2
-        isCrash = False
+        done = False
+        mod = 9
         for i, item in enumerate(data.ranges):
+            if (i%mod==0):
+                if data.ranges[i] == float ('Inf') or np.isinf(data.ranges[i]):
+                    discretized_ranges.append(6)
+                elif np.isnan(data.ranges[i]):
+                    discretized_ranges.append(0)
+                else:
+                    discretized_ranges.append(int(data.ranges[i]))
             if (min_range > data.ranges[i] > 0):
-                isCrash = True
-        return data.ranges,isCrash
+                done = True
+        return discretized_ranges,done
 
     def step(self, action):
+
         rospy.wait_for_service('/gazebo/unpause_physics')
         try:
             self.unpause()
         except Exception:
-            print ("/gazebo/unpause_physics service call failed")
+            print("/gazebo/unpause_physics service call failed")
 
-        max_ang_speed = 0.9
-        ang_vel = (action-10)*max_ang_speed*0.1 #from (-0.33 to + 0.33)
+        if action == 0: #FORWARD
+            vel_cmd = Twist()
+            vel_cmd.linear.x = 0.5
+            vel_cmd.angular.z = 0.0
+            self.vel_pub.publish(vel_cmd)
+        elif action == 1: #LEFT
+            vel_cmd = Twist()
+            vel_cmd.linear.x = 0.2
+            vel_cmd.angular.z = 1.0
+            self.vel_pub.publish(vel_cmd)
+        elif action == 2: #RIGHT
+            vel_cmd = Twist()
+            vel_cmd.linear.x = 0.2
+            vel_cmd.angular.z = -1.0
+            self.vel_pub.publish(vel_cmd)
 
-        vel_cmd = Twist()
-        vel_cmd.linear.x = 0.4
-        vel_cmd.angular.z = ang_vel
-        self.vel_pub.publish(vel_cmd)
         data = None
         while data is None:
             try:
@@ -52,58 +71,24 @@ class GazeboTurtlebot3DQLearnEnv():
             except Exception:
                 print("/scan Error laser data is empty!")
                 time.sleep(5)
-
-        odomData = None
-        while odomData is None:
-            try:
-                odomData = rospy.wait_for_message('/odom', Odometry, timeout=5)
-            except Exception:
-                print("/odom Error odom data is empty!")
-                time.sleep(5)
-
+            
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
-            #resp_pause = pause.call()
             self.pause()
         except Exception:
-            print ("/gazebo/pause_physics service call failed")
+            print("/gazebo/pause_physics service call failed")
 
-        state, isCrash = self.calculate_observation(data)
+        state,done = self.discretize_observation(data)
 
-        if isCrash:
-            done = True
-
-        xLimits = [-1.4, 2.192]
-        yLimits = [-2.603, 0.47]
-
-        targetX = random.uniform(*xLimits)
-        targetY = random.uniform(*yLimits)
-        myX = odomData.pose.pose.position.x
-        myY = odomData.pose.pose.position.y
-
-        self.newDistance = math.sqrt((targetX - myX)**2 + (targetY - myY)**2)
-
-        if self.newDistance < 0.2:
-            done = True
-
-        if self.oldDistance > self.newDistance:
-            distanceAward = 2
+        if not done:
+            if action == 0:
+                reward = 5
+            else:
+                reward = 1
         else:
-            distanceAward = -2
-
-        if isCrash:
             reward = -200
-        elif done:
-            # Reached to target
-            rospy.logerr("uuuuuuuuuuuuuuuuuuuuuuuu")
-            reward = 200
-        else:
-            # Negative reward for fooling around more negative reward for turn around
-            reward = -abs(ang_vel) - 1
 
-        self.oldDistance = self.newDistance
-
-        return np.asarray(state), reward, done, {}
+        return state, reward, done, {}
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
@@ -137,6 +122,6 @@ class GazeboTurtlebot3DQLearnEnv():
         except Exception:
             print ("/gazebo/pause_physics service call failed")
 
-        state, isCrash = self.calculate_observation(data)
+        state, isCrash = self.discretize_observation(data)
 
-        return np.asarray(state)
+        return state
