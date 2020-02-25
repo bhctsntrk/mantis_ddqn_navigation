@@ -293,8 +293,8 @@ if __name__ == '__main__':
         discountFactor = 0.99
         memorySize = 1000000
         network_laser_inputs = 180
-        network_outputs = 21
-        network_structure = [180, 240, 360, 240, 180]
+        network_outputs = 11
+        network_structure = [180, 240, 360, 180, 90, 45]
         current_epoch = 0
 
         deepQ = DeepQ(network_laser_inputs, network_outputs, memorySize, discountFactor, learningRate, learnStart)

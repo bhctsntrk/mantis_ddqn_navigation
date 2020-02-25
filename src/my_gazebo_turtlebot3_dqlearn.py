@@ -47,7 +47,7 @@ class GazeboTurtlebot3DQLearnEnv():
             print ("/gazebo/unpause_physics service call failed")
 
         max_ang_speed = 0.9
-        ang_vel = (action-10)*max_ang_speed*0.1 #from (-0.33 to + 0.33)
+        ang_vel = (action)*max_ang_speed*0.1 #from (-0.33 to + 0.33)
 
         vel_cmd = Twist()
         vel_cmd.linear.x = 0.5
@@ -86,7 +86,7 @@ class GazeboTurtlebot3DQLearnEnv():
         #xLimits = [[-1.4, -0.211], [-0.823, 2.192]]
         #yLimits = [[-2.603, -1.185], [-0.763, 0.47]]
 
-        # maze 7 limits
+        # maze 5 limits
         xLimits = [[-2.787, 5.524], [-2.787, 5.524]]
         yLimits = [[-8.9, 1.676], [-8.9, 1.676]]
 
@@ -110,15 +110,15 @@ class GazeboTurtlebot3DQLearnEnv():
             reward = -200
         elif done:
             # Reached to target
-            rospy.logerr("uuuuuuuuuuuuuuuuuuuuuuuu")
+            rospy.logerr("Reached to target   x = " + str(targetX) + "   y = "+str(targetY))
             reward = 200
         else:
-            # Negative reward for fooling around more negative reward for turn around
-            reward = -abs(ang_vel) - 1
+            # Negative reward for distance
+            reward = -self.newDistance
 
         self.oldDistance = self.newDistance
 
-        return np.asarray(state), np.asarray([targetX, targetY]), reward, done, {}
+        return np.asarray(state), np.asarray([targetX - myX, targetY - myY]), reward, done, {}
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
