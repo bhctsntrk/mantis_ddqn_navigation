@@ -31,13 +31,17 @@ class GazeboTurtlebot3DQLearnEnv():
 
         self.oldDistance = 0
 
-    def calculate_observation(self,data):
+    def calculate_observation(self, data):
         min_range = 0.2
+        max_range = 6.0
         isCrash = False
-        for i, item in enumerate(data.ranges):
-            if (min_range > data.ranges[i] > 0):
+        data = list(data.ranges)
+        for i, item in enumerate(data):
+            if (min_range > data[i] > 0):
                 isCrash = True
-        return data.ranges,isCrash
+            if np.isinf(data[i]):
+                data[i] = max_range
+        return data, isCrash
 
     def step(self, action):
         rospy.wait_for_service('/gazebo/unpause_physics')
@@ -46,8 +50,7 @@ class GazeboTurtlebot3DQLearnEnv():
         except Exception:
             print ("/gazebo/unpause_physics service call failed")
 
-        max_ang_speed = 0.9
-        ang_vel = (action)*max_ang_speed*0.1 #from (-0.33 to + 0.33)
+        ang_vel = action
 
         vel_cmd = Twist()
         vel_cmd.linear.x = 0.5
@@ -86,7 +89,7 @@ class GazeboTurtlebot3DQLearnEnv():
         #xLimits = [[-1.4, -0.211], [-0.823, 2.192]]
         #yLimits = [[-2.603, -1.185], [-0.763, 0.47]]
 
-        # maze 5 limits
+        # maze 5 limits to create random target point in map
         xLimits = [[-2.787, 5.524], [-2.787, 5.524]]
         yLimits = [[-8.9, 1.676], [-8.9, 1.676]]
 
@@ -98,7 +101,7 @@ class GazeboTurtlebot3DQLearnEnv():
 
         self.newDistance = math.sqrt((targetX - myX)**2 + (targetY - myY)**2)
 
-        if self.newDistance < 0.3:
+        if self.newDistance < 0.2:  # Reached to target
             done = True
 
         if self.oldDistance > self.newDistance:
@@ -114,11 +117,11 @@ class GazeboTurtlebot3DQLearnEnv():
             reward = 200
         else:
             # Negative reward for distance
-            reward = -self.newDistance
+            reward = self.oldDistance - self.newDistance
 
         self.oldDistance = self.newDistance
 
-        return np.asarray(state), np.asarray([targetX - myX, targetY - myY]), reward, done, {}
+        return np.asarray(state).reshape(1,180,1), np.asarray([targetX - myX, targetY - myY]), reward, done, {}
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
@@ -154,4 +157,4 @@ class GazeboTurtlebot3DQLearnEnv():
 
         state, isCrash = self.calculate_observation(laserData)
 
-        return np.asarray(state), np.asarray([0, 0])
+        return np.asarray(state).reshape(1,180,1), np.asarray([0, 0])

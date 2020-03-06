@@ -14,9 +14,9 @@ from keras.layers.core import Dense, Dropout, Activation
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import LeakyReLU
 from keras.regularizers import l2
-from keras.layers import Input
+from keras.layers import Input, Flatten
 from keras.models import Model
-from keras.layers import concatenate
+from keras.layers import concatenate, MaxPooling1D, Conv1D
 import memory
 
 class DeepQ:
@@ -98,21 +98,39 @@ class DeepQ:
         return model
 
     def createModel(self, inputs, outputs, hiddenLayers, activationType, learningRate):
-        laserInput = Input(shape=(self.input_laser_size,))
+        laserInput = Input(shape=(self.input_laser_size,1))
         targetPointInput = Input(shape=(2,)) # x,y   2 value
 
-        x = Dense(hiddenLayers[0], activation="relu")(laserInput)
-        for index in range(1, len(hiddenLayers)):
-            # print("adding layer "+str(index))
-            layerSize = hiddenLayers[index]
-            x = Dropout(0.4)(x)
-            x = Dense(layerSize, activation="relu")(x)
+        x = Conv1D(256, kernel_size=5, padding='same', activation='relu')(laserInput)
+        x = MaxPooling1D(pool_size=4)(x)
+
+        x = Conv1D(128, kernel_size=5, padding='same', activation='relu')(x)
+        x = MaxPooling1D(pool_size=4)(x)
+
+        x = Conv1D(64, kernel_size=5, padding='same', activation='relu')(x)
+        x = MaxPooling1D(pool_size=4)(x)
+
+
+        x = Dense(16, activation="relu")(x)
+        x = Dropout(0.4)(x)
+        x = Dense(32, activation="relu")(x)
+        x = Dropout(0.4)(x)
+        x = Dense(64, activation="relu")(x)
+        x = Dropout(0.4)(x)
+        x = Dense(32, activation="relu")(x)
+        x = Dropout(0.4)(x)
+        x = Dense(64, activation="relu")(x)
+        x = Dropout(0.4)(x)
+        x = Dense(32, activation="relu")(x)
+        x = Dense(2, activation="relu")(x)
+
+        x = Flatten()(x)
 
         x = Model(inputs=laserInput, outputs=x)
 
-        y = Dense(2, activation="linear")(targetPointInput)
+        y = Dense(1, activation="linear")(targetPointInput)
         y = Model(inputs=targetPointInput, outputs=y)
-
+        print(y)
         combined = concatenate([x.output, y.output])
 
         z = Dense(self.output_size, activation="relu")(combined)
@@ -148,12 +166,12 @@ class DeepQ:
 
     # predict Q values for all the actions
     def getQValues(self, state, targetPoints):
-        predicted = self.model.predict([state.reshape(1,len(state)), targetPoints.reshape(1,len(targetPoints))])
+        predicted = self.model.predict([state, targetPoints.reshape(1,len(targetPoints))])
         return predicted[0]
 
     def getTargetQValues(self, state, targetPoints):
         #predicted = self.targetModel.predict(state.reshape(1,len(state)))
-        predicted = self.targetModel.predict([state.reshape(1,len(state)), targetPoints.reshape(1,len(targetPoints))])
+        predicted = self.targetModel.predict([state, targetPoints.reshape(1,len(targetPoints))])
 
         return predicted[0]
 
@@ -177,7 +195,7 @@ class DeepQ:
     def selectAction(self, qValues, explorationRate):
         rand = random.random()
         if rand < explorationRate :
-            action = np.random.randint(0, self.output_size)
+            action = np.random.uniform(-1, 1)
         else :
             action = self.getMaxIndex(qValues)
         return action
