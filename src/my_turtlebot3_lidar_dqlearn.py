@@ -14,7 +14,7 @@ from keras.layers.core import Dense, Dropout, Activation
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import LeakyReLU
 from keras.regularizers import l2
-from keras.layers import Input, Flatten
+from keras.layers import Input, Flatten, LSTM
 from keras.models import Model
 from keras.layers import concatenate, MaxPooling1D, Conv1D
 import memory
@@ -30,7 +30,7 @@ class DeepQ:
             target = reward(s,a) + gamma * max(Q(s')
 
     """
-    def __init__(self, inputs_laser, outputs, memorySize, discountFactor, learningRate, learnStart):
+    def __init__(self, inputs_laser, output_size, memorySize, discountFactor, learningRate, learnStart):
         """
         Parameters:
             - inputs_laser: inputs_laser size
@@ -41,7 +41,7 @@ class DeepQ:
             - learnStart: steps to happen before for learning. Set to 128
         """
         self.input_laser_size = inputs_laser
-        self.output_size = outputs
+        self.output_size = output_size
         self.memory = memory.Memory(memorySize)
         self.discountFactor = discountFactor
         self.learnStart = learnStart
@@ -52,103 +52,81 @@ class DeepQ:
         except Exception:
             pass
 
-    def initNetworks(self, hiddenLayers):
-        model = self.createModel(self.input_laser_size, self.output_size, hiddenLayers, "relu", self.learningRate)
+    def initNetworks(self):
+        model = self.createModel(self.output_size, self.learningRate)
         self.model = model
 
-        targetModel = self.createModel(self.input_laser_size, self.output_size, hiddenLayers, "relu", self.learningRate)
+        targetModel = self.createModel(self.output_size, self.learningRate)
         self.targetModel = targetModel
 
-    def createRegularizedModel(self, inputs, outputs, hiddenLayers, activationType, learningRate):
-        bias = True
-        dropout = 0
-        regularizationFactor = 0.01
-        model = Sequential()
-        if len(hiddenLayers) == 0: 
-            model.add(Dense(self.output_size, input_shape=(self.input_laser_size,), init='lecun_uniform', bias=bias))
-            model.add(Activation("linear"))
-        else :
-            if regularizationFactor > 0:
-                model.add(Dense(hiddenLayers[0], input_shape=(self.input_laser_size,), init='lecun_uniform', W_regularizer=l2(regularizationFactor),  bias=bias))
-            else:
-                model.add(Dense(hiddenLayers[0], input_shape=(self.input_laser_size,), init='lecun_uniform', bias=bias))
+    def createCNNModel(self, width, height, filters=(16, 32, 64), regress=False):
+        inputShape = (height, width)
+        chanDim = -1
+        # define the model input
+        inputs = Input(shape=inputShape)
+        
+        # loop over the number of filters
+        for (i, f) in enumerate(filters):
+            # if this is the first CONV layer then set the input
+            # appropriately
+            if i == 0:
+                x = inputs
+            # CONV => RELU => BN => POOL
+            x = Conv1D(f, kernel_size=3, padding="same")(x)
+            x = Activation("relu")(x)
+            x = BatchNormalization(axis=chanDim)(x)
+            x = MaxPooling1D(pool_size=2)(x)
 
-            if (activationType == "LeakyReLU") :
-                model.add(LeakyReLU(alpha=0.01))
-            else :
-                model.add(Activation(activationType))
-            
-            for index in range(len(hiddenLayers)):
-                layerSize = hiddenLayers[index]
-                if regularizationFactor > 0:
-                    model.add(Dense(layerSize, init='lecun_uniform', W_regularizer=l2(regularizationFactor), bias=bias))
-                else:
-                    model.add(Dense(layerSize, init='lecun_uniform', bias=bias))
-                if (activationType == "LeakyReLU") :
-                    model.add(LeakyReLU(alpha=0.01))
-                else :
-                    model.add(Activation(activationType))
-                if dropout > 0:
-                    model.add(Dropout(dropout))
-            model.add(Dense(self.output_size, init='lecun_uniform', bias=bias))
-            model.add(Activation("linear"))
-        optimizer = optimizers.RMSprop(lr=learningRate, rho=0.9, epsilon=1e-06)
-        model.compile(loss="mse", optimizer=optimizer)
-        model.summary()
-        return model
-
-    def createModel(self, inputs, outputs, hiddenLayers, activationType, learningRate):
-        laserInput = Input(shape=(self.input_laser_size,1))
-        targetPointInput = Input(shape=(2,)) # x,y   2 value
-
-        x = Conv1D(256, kernel_size=5, padding='same', activation='relu')(laserInput)
-        x = MaxPooling1D(pool_size=4)(x)
-
-        x = Conv1D(128, kernel_size=5, padding='same', activation='relu')(x)
-        x = MaxPooling1D(pool_size=4)(x)
-
-        x = Conv1D(64, kernel_size=5, padding='same', activation='relu')(x)
-        x = MaxPooling1D(pool_size=4)(x)
-
-
-        x = Dense(16, activation="relu")(x)
-        x = Dropout(0.4)(x)
-        x = Dense(32, activation="relu")(x)
-        x = Dropout(0.4)(x)
-        x = Dense(64, activation="relu")(x)
-        x = Dropout(0.4)(x)
-        x = Dense(32, activation="relu")(x)
-        x = Dropout(0.4)(x)
-        x = Dense(64, activation="relu")(x)
-        x = Dropout(0.4)(x)
-        x = Dense(32, activation="relu")(x)
-        x = Dense(2, activation="relu")(x)
-
+        # flatten the volume, then FC => RELU => BN => DROPOUT
         x = Flatten()(x)
+        x = Dense(16)(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=chanDim)(x)
+        x = Dropout(0.5)(x)
+        # apply another FC layer, this one to match the number of nodes
+        # coming out of the MLP
+        x = Dense(4)(x)
+        x = Activation("relu")(x)
+        # check to see if the regression node should be added
+        if regress:
+            x = Dense(1, activation="linear")(x)
+        # construct the CNN
+        model = Model(inputs, x)
+        # return the CNN
+        return model
 
-        x = Model(inputs=laserInput, outputs=x)
+    def createMLPModel(self, dim, regress=False):
+        # define our MLP network
+        model = Sequential()
+        model.add(Dense(8, input_dim=dim, activation="relu"))
+        model.add(Dense(4, activation="relu"))
+        # check to see if the regression node should be added
+        if regress:
+            model.add(Dense(1, activation="linear"))
+        # return our model
+        return model
 
-        y = Dense(1, activation="linear")(targetPointInput)
-        y = Model(inputs=targetPointInput, outputs=y)
-        print(y)
-        combined = concatenate([x.output, y.output])
-
-        z = Dense(self.output_size, activation="relu")(combined)
-        z = Dense(self.output_size, activation="linear")(z)
-
-        model = Model(inputs=[x.input, y.input], outputs=z)
+    def createModel(self, output_size, learningRate):
+        # create the MLP and CNN models
+        cnn = self.createCNNModel(1, self.input_laser_size, regress=False)
+        mlp = self.createMLPModel(2, regress=False) # x,y   2 value
+        # create the input to our final set of layers as the *output* of both
+        # the MLP and CNN
+        combinedInput = concatenate([mlp.output, cnn.output])
+        # our final FC layer head will have two dense layers, the final one
+        # being our regression head
+        x = Dense(4, activation="relu")(combinedInput)
+        x = Dense(output_size, activation="softmax")(x)
+        # our final model will accept categorical/numerical data on the MLP
+        # input and images on the CNN input, outputting a single value (the
+        # predicted price of the house)
+        model = Model(inputs=[cnn.input, mlp.input], outputs=x)
 
         optimizer = optimizers.RMSprop(lr=learningRate, rho=0.9, epsilon=1e-06)
         model.compile(loss="mse", optimizer=optimizer)
         model.summary()
         return model
 
-    def printNetwork(self):
-        i = 0
-        for layer in self.model.layers:
-            weights = layer.get_weights()
-            print ("layer ",i,": ",weights)
-            i += 1
 
     def backupNetwork(self, model, backup):
         weightMatrix = []
@@ -166,20 +144,21 @@ class DeepQ:
 
     # predict Q values for all the actions
     def getQValues(self, state, targetPoints):
-        predicted = self.model.predict([state, targetPoints.reshape(1,len(targetPoints))])
+        # 1,180,1
+        # batch_size , height, width
+        predicted = self.model.predict([state.reshape(1,self.input_laser_size,1), targetPoints.reshape(1,len(targetPoints))])
         return predicted[0]
 
     def getTargetQValues(self, state, targetPoints):
-        #predicted = self.targetModel.predict(state.reshape(1,len(state)))
-        predicted = self.targetModel.predict([state, targetPoints.reshape(1,len(targetPoints))])
+        predicted = self.targetModel.predict([state.reshape(1,self.input_laser_size,1), targetPoints.reshape(1,len(targetPoints))])
 
         return predicted[0]
 
     def getMaxQ(self, qValues):
-        return np.max(qValues)
+        return np.max(qValues)     # MAXIMUM DEGERI DONER
 
     def getMaxIndex(self, qValues):
-        return np.argmax(qValues)
+        return np.argmax(qValues)  # ONEMLI MAXIMUM DEGERIN INDEXINI DONER
 
     # calculate the target function
     def calculateTarget(self, qValuesNewState, reward, isFinal):
@@ -195,7 +174,7 @@ class DeepQ:
     def selectAction(self, qValues, explorationRate):
         rand = random.random()
         if rand < explorationRate :
-            action = np.random.uniform(-1, 1)
+            action = np.random.randint(1, 3)
         else :
             action = self.getMaxIndex(qValues)
         return action
@@ -238,7 +217,7 @@ class DeepQ:
         if self.memory.getCurrentSize() > self.learnStart:
             # learn in batches of 128
             miniBatch = self.memory.getMiniBatch(miniBatchSize)
-            X_laser_batch = np.empty((0,self.input_laser_size), dtype = np.float64)
+            X_laser_batch = np.empty((0,self.input_laser_size,1), dtype = np.float64)  # 0 batch baslangicta hic elemena sahip olmadigi icin
             X_targetPoint_batch = np.empty((0,2), dtype = np.float64)
             Y_batch = np.empty((0,self.output_size), dtype = np.float64)
             for sample in miniBatch:
@@ -256,7 +235,6 @@ class DeepQ:
                 else :
                     qValuesNewState = self.getQValues(newState, newTargetPoints)
                 targetValue = self.calculateTarget(qValuesNewState, reward, isFinal)
-
                 X_laser_batch = np.append(X_laser_batch, np.array([state.copy()]), axis=0)
                 X_targetPoint_batch = np.append(X_targetPoint_batch, np.array([targetPoints.copy()]), axis=0)
                 Y_sample = qValues.copy()
@@ -311,15 +289,16 @@ if __name__ == '__main__':
         discountFactor = 0.99
         memorySize = 1000000
         network_laser_inputs = 180
-        network_outputs = 11
-        network_structure = [180, 240, 360, 180, 90, 45]
+        output_size = 3 # Three actions we have
         current_epoch = 0
 
-        deepQ = DeepQ(network_laser_inputs, network_outputs, memorySize, discountFactor, learningRate, learnStart)
-        deepQ.initNetworks(network_structure)
+        deepQ = DeepQ(network_laser_inputs, output_size, memorySize, discountFactor, learningRate, learnStart)
+        deepQ.initNetworks()
     else:
         #Load weights, monitor info and parameter info.
         #ADD TRY CATCH fro this else
+        print("Continue to learning from old files")
+        time.sleep(5)
         with open(params_json) as outfile:
             d = json.load(outfile)
             epochs = d.get('epochs')
@@ -332,12 +311,11 @@ if __name__ == '__main__':
             discountFactor = d.get('discountFactor')
             memorySize = d.get('memorySize')
             network_laser_inputs = d.get('network_laser_inputs')
-            network_outputs = d.get('network_outputs')
-            network_layers = d.get('network_structure')
+            output_size = d.get('output_size')
             current_epoch = d.get('current_epoch')
 
-        deepQ = DeepQ(network_laser_inputs, network_outputs, memorySize, discountFactor, learningRate, learnStart)
-        deepQ.initNetworks(network_layers)
+        deepQ = DeepQ(network_laser_inputs, output_size, memorySize, discountFactor, learningRate, learnStart)
+        deepQ.initNetworks()
         deepQ.loadWeights(weights_path)
 
         clear_monitor_files(outdir)
@@ -403,8 +381,8 @@ if __name__ == '__main__':
 
                         copy_tree(outdir,'/tmp/turtle_c2_dqn_ep'+str(epoch))
                         #save simulation parameters.
-                        parameter_keys = ['epochs','steps','updateTargetNetwork','explorationRate','minibatch_size','learnStart','learningRate','discountFactor','memorySize','network_laser_inputs','network_outputs','network_structure','current_epoch']
-                        parameter_values = [epochs, steps, updateTargetNetwork, explorationRate, minibatch_size, learnStart, learningRate, discountFactor, memorySize, network_laser_inputs, network_outputs, network_structure, epoch]
+                        parameter_keys = ['epochs','steps','updateTargetNetwork','explorationRate','minibatch_size','learnStart','learningRate','discountFactor','memorySize','network_laser_inputs','current_epoch']
+                        parameter_values = [epochs, steps, updateTargetNetwork, explorationRate, minibatch_size, learnStart, learningRate, discountFactor, memorySize, network_laser_inputs, epoch]
                         parameter_dictionary = dict(zip(parameter_keys, parameter_values))
                         with open('/tmp/turtle_c2_dqn_ep'+str(epoch)+'.json', 'w') as outfile:
                             json.dump(parameter_dictionary, outfile)
