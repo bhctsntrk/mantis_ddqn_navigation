@@ -36,11 +36,13 @@ class GazeboTurtlebot3DQLearnEnv():
         max_range = 6.0
         isCrash = False
         data = list(data.ranges)
-        for i, item in enumerate(data):
+        for i in range(len(data)):
             if (min_range > data[i] > 0):
                 isCrash = True
             if np.isinf(data[i]):
                 data[i] = max_range
+            if np.isnan(data[i]):
+                data[i] = 0
         return data, isCrash
 
     def step(self, action):
@@ -50,12 +52,23 @@ class GazeboTurtlebot3DQLearnEnv():
         except Exception:
             print ("/gazebo/unpause_physics service call failed")
 
-        ang_vel = action
+        # 3 actions
+        if action == 0: #FORWARD
+            vel_cmd = Twist()
+            vel_cmd.linear.x = 0.7
+            vel_cmd.angular.z = 0.0
+            self.vel_pub.publish(vel_cmd)
+        elif action == 1: #LEFT
+            vel_cmd = Twist()
+            vel_cmd.linear.x = 0.3
+            vel_cmd.angular.z = 0.4
+            self.vel_pub.publish(vel_cmd)
+        elif action == 2: #RIGHT
+            vel_cmd = Twist()
+            vel_cmd.linear.x = 0.3
+            vel_cmd.angular.z = -0.4
+            self.vel_pub.publish(vel_cmd)
 
-        vel_cmd = Twist()
-        vel_cmd.linear.x = 0.5
-        vel_cmd.angular.z = ang_vel
-        self.vel_pub.publish(vel_cmd)
         data = None
         while data is None:
             try:
@@ -117,11 +130,11 @@ class GazeboTurtlebot3DQLearnEnv():
             reward = 200
         else:
             # Negative reward for distance
-            reward = self.oldDistance - self.newDistance
+            reward = (self.oldDistance - self.newDistance)*10
 
         self.oldDistance = self.newDistance
 
-        return np.asarray(state).reshape(1,180,1), np.asarray([targetX - myX, targetY - myY]), reward, done, {}
+        return np.asarray(state).reshape(180,1), np.asarray([targetX - myX, targetY - myY]), reward, done, {}
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
@@ -157,4 +170,4 @@ class GazeboTurtlebot3DQLearnEnv():
 
         state, isCrash = self.calculate_observation(laserData)
 
-        return np.asarray(state).reshape(1,180,1), np.asarray([0, 0])
+        return np.asarray(state).reshape(180,1), np.asarray([0, 0])
