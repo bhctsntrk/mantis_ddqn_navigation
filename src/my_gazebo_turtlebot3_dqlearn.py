@@ -3,6 +3,7 @@ import roslaunch
 import time
 import numpy as np
 import math
+from math import pi
 
 import random
 
@@ -12,6 +13,7 @@ from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
 
 from sensor_msgs.msg import LaserScan
+import tf
 
 from gym.utils import seeding
 
@@ -30,8 +32,11 @@ class GazeboTurtlebot3DQLearnEnv():
         self.min_crash_range = 0.2  # Make done = True if agent close to wall 
 
         self.oldDistance = 0
+        self.targetX = 10
+        self.targetY = 10
+        self.success = True
 
-    def calculate_observation(self, data):
+    def calculate_observation(self, data, heading, distance):
         min_range = 0.2
         max_range = 6.0
         isCrash = False
@@ -43,7 +48,7 @@ class GazeboTurtlebot3DQLearnEnv():
                 data[i] = max_range
             if np.isnan(data[i]):
                 data[i] = 0
-        return data, isCrash
+        return data + [heading, distance], isCrash
 
     def step(self, action):
         rospy.wait_for_service('/gazebo/unpause_physics')
@@ -85,6 +90,27 @@ class GazeboTurtlebot3DQLearnEnv():
                 print("/odom Error odom data is empty!")
                 time.sleep(5)
 
+        myX = odomData.pose.pose.position.x
+        myY = odomData.pose.pose.position.y
+
+        self.newDistance = math.sqrt((self.targetX - myX)**2 + (self.targetY - myY)**2)
+
+        orientation = odomData.pose.pose.orientation
+        orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
+        _, _, yaw = tf.transformations.euler_from_quaternion(orientation_list)
+
+        goal_angle = math.atan2(self.targetY - myY, self.targetX - myX)
+
+        heading = goal_angle - yaw
+
+        if heading > pi:
+            heading -= 2 * pi
+
+        elif heading < -pi:
+            heading += 2 * pi
+
+        heading = round(heading, 2)
+
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
             #resp_pause = pause.call()
@@ -92,49 +118,29 @@ class GazeboTurtlebot3DQLearnEnv():
         except Exception:
             print ("/gazebo/pause_physics service call failed")
 
-        state, isCrash = self.calculate_observation(data)
+        state, isCrash = self.calculate_observation(data, heading, self.newDistance)
         
         done = False
         if isCrash:
             done = True
-        
-        # maze 2 limits
-        #xLimits = [[-1.4, -0.211], [-0.823, 2.192]]
-        #yLimits = [[-2.603, -1.185], [-0.763, 0.47]]
-
-        # maze 5 limits to create random target point in map
-        xLimits = [[-2.787, 5.524], [-2.787, 5.524]]
-        yLimits = [[-8.9, 1.676], [-8.9, 1.676]]
-
-        targetX = random.uniform(*xLimits[random.randint(0,1)])
-        targetY = random.uniform(*yLimits[random.randint(0,1)])
-
-        myX = odomData.pose.pose.position.x
-        myY = odomData.pose.pose.position.y
-
-        self.newDistance = math.sqrt((targetX - myX)**2 + (targetY - myY)**2)
 
         if self.newDistance < 0.2:  # Reached to target
             done = True
-
-        if self.oldDistance > self.newDistance:
-            distanceAward = 2
-        else:
-            distanceAward = -2
 
         if isCrash:
             reward = -200
         elif done:
             # Reached to target
-            rospy.logerr("Reached to target   x = " + str(targetX) + "   y = "+str(targetY))
+            rospy.logerr("Reached to target   x = " + str(self.targetX) + "   y = "+str(self.targetY))
+            self.success = True
             reward = 200
         else:
             # Negative reward for distance
-            reward = (self.oldDistance - self.newDistance)*10
+            reward = (self.oldDistance - self.newDistance)*8
 
         self.oldDistance = self.newDistance
 
-        return np.asarray(state).reshape(180,1), np.asarray([targetX - myX, targetY - myY]), reward, done, {}
+        return np.asarray(state), reward, done, {}
 
     def reset(self):
         # Resets the state of the environment and returns an initial observation.
@@ -144,6 +150,20 @@ class GazeboTurtlebot3DQLearnEnv():
             self.reset_proxy()
         except Exception:
             print ("/gazebo/reset_simulation service call failed")
+
+        # maze 2 limits
+        #xLimits = [[-1.4, -0.211], [-0.823, 2.192]]
+        #yLimits = [[-2.603, -1.185], [-0.763, 0.47]]
+
+        # maze 5 limits to create random target point in map
+        xLimits = [[-2, 5], [4, 5]]
+        yLimits = [[-7, -8], [-8, 1]]
+
+        if self.success:
+            self.targetX = random.uniform(*xLimits[random.randint(0,1)])
+            self.targetY = random.uniform(*yLimits[random.randint(0,1)])
+            rospy.logerr("X = " + str(self.targetX) +" Y = "+ str(self.targetY))
+            self.success = False
 
         # Unpause simulation to make observation
         rospy.wait_for_service('/gazebo/unpause_physics')
@@ -161,6 +181,35 @@ class GazeboTurtlebot3DQLearnEnv():
                 print("/scan Error laser data is empty!")
                 time.sleep(5)
 
+        odomData = None
+        while odomData is None:
+            try:
+                odomData = rospy.wait_for_message('/odom', Odometry, timeout=5)
+            except Exception:
+                print("/odom Error odom data is empty!")
+                time.sleep(5)
+
+        myX = odomData.pose.pose.position.x
+        myY = odomData.pose.pose.position.y
+
+        self.newDistance = math.sqrt((self.targetX - myX)**2 + (self.targetY - myY)**2)
+
+        orientation = odomData.pose.pose.orientation
+        orientation_list = [orientation.x, orientation.y, orientation.z, orientation.w]
+        _, _, yaw = tf.transformations.euler_from_quaternion(orientation_list)
+
+        goal_angle = math.atan2(self.targetY - myY, self.targetX - myX)
+
+        heading = goal_angle - yaw
+
+        if heading > pi:
+            heading -= 2 * pi
+
+        elif heading < -pi:
+            heading += 2 * pi
+
+        heading = round(heading, 2)
+
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
             #resp_pause = pause.call()
@@ -168,6 +217,6 @@ class GazeboTurtlebot3DQLearnEnv():
         except Exception:
             print ("/gazebo/pause_physics service call failed")
 
-        state, isCrash = self.calculate_observation(laserData)
-
-        return np.asarray(state).reshape(180,1), np.asarray([0, 0])
+        state, isCrash = self.calculate_observation(laserData, heading, self.newDistance)
+        
+        return np.asarray(state)

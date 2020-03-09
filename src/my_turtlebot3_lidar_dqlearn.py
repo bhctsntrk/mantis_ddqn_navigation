@@ -17,6 +17,7 @@ from keras.regularizers import l2
 from keras.layers import Input, Flatten, LSTM
 from keras.models import Model
 from keras.layers import concatenate, MaxPooling1D, Conv1D
+from keras.optimizers import RMSprop
 import memory
 
 class DeepQ:
@@ -59,72 +60,20 @@ class DeepQ:
         targetModel = self.createModel(self.output_size, self.learningRate)
         self.targetModel = targetModel
 
-    def createCNNModel(self, width, height, filters=(16, 32, 64), regress=False):
-        inputShape = (height, width)
-        chanDim = -1
-        # define the model input
-        inputs = Input(shape=inputShape)
-        
-        # loop over the number of filters
-        for (i, f) in enumerate(filters):
-            # if this is the first CONV layer then set the input
-            # appropriately
-            if i == 0:
-                x = inputs
-            # CONV => RELU => BN => POOL
-            x = Conv1D(f, kernel_size=3, padding="same")(x)
-            x = Activation("relu")(x)
-            x = BatchNormalization(axis=chanDim)(x)
-            x = MaxPooling1D(pool_size=2)(x)
-
-        # flatten the volume, then FC => RELU => BN => DROPOUT
-        x = Flatten()(x)
-        x = Dense(16)(x)
-        x = Activation("relu")(x)
-        x = BatchNormalization(axis=chanDim)(x)
-        x = Dropout(0.5)(x)
-        # apply another FC layer, this one to match the number of nodes
-        # coming out of the MLP
-        x = Dense(4)(x)
-        x = Activation("relu")(x)
-        # check to see if the regression node should be added
-        if regress:
-            x = Dense(1, activation="linear")(x)
-        # construct the CNN
-        model = Model(inputs, x)
-        # return the CNN
-        return model
-
-    def createMLPModel(self, dim, regress=False):
-        # define our MLP network
-        model = Sequential()
-        model.add(Dense(8, input_dim=dim, activation="relu"))
-        model.add(Dense(4, activation="relu"))
-        # check to see if the regression node should be added
-        if regress:
-            model.add(Dense(1, activation="linear"))
-        # return our model
-        return model
-
     def createModel(self, output_size, learningRate):
-        # create the MLP and CNN models
-        cnn = self.createCNNModel(1, self.input_laser_size, regress=False)
-        mlp = self.createMLPModel(2, regress=False) # x,y   2 value
-        # create the input to our final set of layers as the *output* of both
-        # the MLP and CNN
-        combinedInput = concatenate([mlp.output, cnn.output])
-        # our final FC layer head will have two dense layers, the final one
-        # being our regression head
-        x = Dense(4, activation="relu")(combinedInput)
-        x = Dense(output_size, activation="softmax")(x)
-        # our final model will accept categorical/numerical data on the MLP
-        # input and images on the CNN input, outputting a single value (the
-        # predicted price of the house)
-        model = Model(inputs=[cnn.input, mlp.input], outputs=x)
+        model = Sequential()
+        dropout = 0.2
 
-        optimizer = optimizers.RMSprop(lr=learningRate, rho=0.9, epsilon=1e-06)
-        model.compile(loss="mse", optimizer=optimizer)
+        model.add(Dense(64, input_shape=(self.input_laser_size,), activation='relu', kernel_initializer='lecun_uniform'))
+
+        model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
+        model.add(Dropout(dropout))
+
+        model.add(Dense(self.output_size, kernel_initializer='lecun_uniform'))
+        model.add(Activation('linear'))
+        model.compile(loss='mse', optimizer=RMSprop(lr=learningRate, rho=0.9, epsilon=1e-06))
         model.summary()
+
         return model
 
 
@@ -143,22 +92,22 @@ class DeepQ:
         self.backupNetwork(self.model, self.targetModel)
 
     # predict Q values for all the actions
-    def getQValues(self, state, targetPoints):
-        # 1,180,1
-        # batch_size , height, width
-        predicted = self.model.predict([state.reshape(1,self.input_laser_size,1), targetPoints.reshape(1,len(targetPoints))])
+    def getQValues(self, state):
+        state = np.asarray(state)
+        predicted = self.model.predict(state.reshape(1,len(state)))
         return predicted[0]
 
-    def getTargetQValues(self, state, targetPoints):
-        predicted = self.targetModel.predict([state.reshape(1,self.input_laser_size,1), targetPoints.reshape(1,len(targetPoints))])
+    def getTargetQValues(self, state):
+        #predicted = self.targetModel.predict(state.reshape(1,len(state)))
+        predicted = self.targetModel.predict(state.reshape(1,len(state)))
 
         return predicted[0]
 
     def getMaxQ(self, qValues):
-        return np.max(qValues)     # MAXIMUM DEGERI DONER
+        return np.max(qValues)
 
     def getMaxIndex(self, qValues):
-        return np.argmax(qValues)  # ONEMLI MAXIMUM DEGERIN INDEXINI DONER
+        return np.argmax(qValues)
 
     # calculate the target function
     def calculateTarget(self, qValuesNewState, reward, isFinal):
@@ -205,8 +154,8 @@ class DeepQ:
                 return i
             i += 1
 
-    def addMemory(self, state, targetPoints, action, reward, newState, newTargetPoints, isFinal):
-        self.memory.addMemory(state, targetPoints, action, reward, newState, newTargetPoints, isFinal)
+    def addMemory(self, state, action, reward, newState, isFinal):
+        self.memory.addMemory(state, action, reward, newState, isFinal)
 
     def learnOnLastState(self):
         if self.memory.getCurrentSize() >= 1:
@@ -217,34 +166,30 @@ class DeepQ:
         if self.memory.getCurrentSize() > self.learnStart:
             # learn in batches of 128
             miniBatch = self.memory.getMiniBatch(miniBatchSize)
-            X_laser_batch = np.empty((0,self.input_laser_size,1), dtype = np.float64)  # 0 batch baslangicta hic elemena sahip olmadigi icin
-            X_targetPoint_batch = np.empty((0,2), dtype = np.float64)
+            X_batch = np.empty((0,self.input_laser_size), dtype = np.float64)
             Y_batch = np.empty((0,self.output_size), dtype = np.float64)
             for sample in miniBatch:
                 isFinal = sample['isFinal']
                 state = sample['state']
-                targetPoints = sample['targetPoints']
                 action = sample['action']
                 reward = sample['reward']
                 newState = sample['newState']
-                newTargetPoints = sample['newTargetPoints']
 
-                qValues = self.getQValues(state ,targetPoints)
+                qValues = self.getQValues(state)
                 if useTargetNetwork:
-                    qValuesNewState = self.getTargetQValues(newState, newTargetPoints)
+                    qValuesNewState = self.getTargetQValues(newState)
                 else :
-                    qValuesNewState = self.getQValues(newState, newTargetPoints)
+                    qValuesNewState = self.getQValues(newState)
                 targetValue = self.calculateTarget(qValuesNewState, reward, isFinal)
-                X_laser_batch = np.append(X_laser_batch, np.array([state.copy()]), axis=0)
-                X_targetPoint_batch = np.append(X_targetPoint_batch, np.array([targetPoints.copy()]), axis=0)
+
+                X_batch = np.append(X_batch, np.array([state.copy()]), axis=0)
                 Y_sample = qValues.copy()
                 Y_sample[action] = targetValue
                 Y_batch = np.append(Y_batch, np.array([Y_sample]), axis=0)
                 if isFinal:
-                    X_laser_batch = np.append(X_laser_batch, np.array([newState.copy()]), axis=0)
-                    X_targetPoint_batch = np.append(X_targetPoint_batch, np.array([newTargetPoints.copy()]), axis=0)
+                    X_batch = np.append(X_batch, np.array([newState.copy()]), axis=0)
                     Y_batch = np.append(Y_batch, np.array([[reward]*self.output_size]), axis=0)
-            self.model.fit([X_laser_batch, X_targetPoint_batch], Y_batch, batch_size = len(miniBatch), nb_epoch=1, verbose = 0)
+            self.model.fit(X_batch, Y_batch, batch_size = len(miniBatch), nb_epoch=1, verbose = 0)
 
     def saveModel(self, path):
         self.model.save(path)
@@ -288,7 +233,7 @@ if __name__ == '__main__':
         learningRate = 0.00025
         discountFactor = 0.99
         memorySize = 1000000
-        network_laser_inputs = 180
+        network_laser_inputs = 182
         output_size = 3 # Three actions we have
         current_epoch = 0
 
@@ -332,23 +277,23 @@ if __name__ == '__main__':
     #start iterating from 'current epoch'.
 
     for epoch in range(current_epoch+1, epochs+1, 1):
-        observation, targetPoints = env.reset()
+        observation = env.reset()
         cumulated_reward = 0
 
         # number of timesteps
         for t in range(steps):
             # env.render()
-            qValues = deepQ.getQValues(observation, targetPoints)
+            qValues = deepQ.getQValues(observation)
 
             action = deepQ.selectAction(qValues, explorationRate)
 
-            newObservation, newTargetPoints, reward, done, info = env.step(action)
+            newObservation, reward, done, info = env.step(action)
 
             cumulated_reward += reward
             if highest_reward < cumulated_reward:
                 highest_reward = cumulated_reward
 
-            deepQ.addMemory(observation, targetPoints, action, reward, newObservation, newTargetPoints, done)
+            deepQ.addMemory(observation, action, reward, newObservation, done)
 
             if stepCounter >= learnStart:
                 if stepCounter <= updateTargetNetwork:
@@ -357,7 +302,6 @@ if __name__ == '__main__':
                     deepQ.learnOnMiniBatch(minibatch_size, True)
 
             observation = newObservation
-            targetPoints = newTargetPoints
 
             if (t >= 1000):
                 print ("reached the end! :D")
