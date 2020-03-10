@@ -28,7 +28,7 @@ class GazeboTurtlebot3DQLearnEnv():
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
-        self.laser_point_count = 180  # 360 laser point in one time
+        #self.laser_point_count = 180  # 360 laser point in one time
         self.min_crash_range = 0.2  # Make done = True if agent close to wall 
 
         self.oldDistance = 0
@@ -60,18 +60,18 @@ class GazeboTurtlebot3DQLearnEnv():
         # 3 actions
         if action == 0: #FORWARD
             vel_cmd = Twist()
-            vel_cmd.linear.x = 0.7
+            vel_cmd.linear.x = 0.4
             vel_cmd.angular.z = 0.0
             self.vel_pub.publish(vel_cmd)
         elif action == 1: #LEFT
             vel_cmd = Twist()
-            vel_cmd.linear.x = 0.3
-            vel_cmd.angular.z = 0.4
+            vel_cmd.linear.x = 0.2
+            vel_cmd.angular.z = 1
             self.vel_pub.publish(vel_cmd)
         elif action == 2: #RIGHT
             vel_cmd = Twist()
-            vel_cmd.linear.x = 0.3
-            vel_cmd.angular.z = -0.4
+            vel_cmd.linear.x = 0.2
+            vel_cmd.angular.z = -1
             self.vel_pub.publish(vel_cmd)
 
         data = None
@@ -156,12 +156,17 @@ class GazeboTurtlebot3DQLearnEnv():
         #yLimits = [[-2.603, -1.185], [-0.763, 0.47]]
 
         # maze 5 limits to create random target point in map
-        xLimits = [[-2, 5], [4, 5]]
-        yLimits = [[-7, -8], [-8, 1]]
+        #xLimits = [[-2, 5], [4, 5]]
+        #yLimits = [[-7, -8], [-8, 1]]
+        # stage 4 limits to create random target point in map
+        xLimits = [[0, 1], [0, 1], [1.5, 2], [-0.7, -1.2], [-2, -1], [1, 2]]
+        yLimits = [[1, 2], [-2, -1], [-2, 0], [-2, -1], [0.8, 1.2], [0.8, 1.2]]
+
+        randomInt = random.randint(0,5)
 
         if self.success:
-            self.targetX = random.uniform(*xLimits[random.randint(0,1)])
-            self.targetY = random.uniform(*yLimits[random.randint(0,1)])
+            self.targetX = random.uniform(*xLimits[randomInt])
+            self.targetY = random.uniform(*yLimits[randomInt])
             rospy.logerr("X = " + str(self.targetX) +" Y = "+ str(self.targetY))
             self.success = False
 
