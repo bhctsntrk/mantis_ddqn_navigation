@@ -1,342 +1,196 @@
 #!/usr/bin/env python3
 
-from my_gazebo_turtlebot3_dqlearn import GazeboTurtlebot3DQLearnEnv
+from my_gazebo_turtlebot3_dqlearn import MantisGymEnv
 
 import time
-from distutils.dir_util import copy_tree
 import os
 import json
 import random
 import numpy as np
 from keras.models import Sequential, load_model
-from keras import optimizers
-from keras.layers.core import Dense, Dropout, Activation
-from keras.layers.normalization import BatchNormalization
-from keras.layers.advanced_activations import LeakyReLU
-from keras.regularizers import l2
-from keras.layers import Input, Flatten, LSTM
-from keras.models import Model
-from keras.layers import concatenate, MaxPooling1D, Conv1D
 from keras.optimizers import RMSprop
-import memory
+from keras.layers import Dense, Dropout
+from collections import deque
 
-class DeepQ:
-    """
-    DQN abstraction.
+class Agent:
 
-    As a quick reminder:
+    def __init__(self, stateSize, actionSize):
+        self.loadModel = False  # Load model from file
+        self.loadEpisodeFrom = 0  # Start to learn from this episode
+        self.episodeCount = 10000  # Total episodes
+        self.stateSize = stateSize  # Step size get from env
+        self.actionSize = actionSize  # Action size get from env
+        self.targetUpdateCount = 2000  # Update target model at every targetUpdateCount
+        self.saveModelAtEvery = 20  # Save model at every saveModelAtEvery epoch
+        self.discountFactor = 0.99  # For qVal calculations
+        self.learningRate = 0.00025  # For model
+        self.epsilon = 1.0  # Exploit or Explore?
+        self.epsilonDecay = 0.99  # epsilon will multiplicated with this thing in every epoch
+        self.epsilonMin = 0.05  # Epsilon never fall more then this
+        self.batchSize = 64  # Size of a miniBatch
+        self.learnStart = 64  # Start to train model from this step
+        self.memory = deque(maxlen=1000000)  # Main memory to keep batchs
+        self.timeOutLim = 500  # After this end the epoch
+
+        self.model = self.initNetwork()
+        self.targetModel = self.initNetwork()
+
+        self.updateTargetModel()
+
+        self.savePath = '/tmp/mantisModel/'
+        try:
+            os.mkdir(self.savePath)
+        except Exception:
+            pass
+
+    def initNetwork(self):
+        model = Sequential()
+
+        model.add(Dense(64, input_shape=(self.stateSize,), activation="relu", kernel_initializer="lecun_uniform"))
+
+        model.add(Dense(64, activation="relu", kernel_initializer="lecun_uniform"))
+        model.add(Dropout(0.3))
+        model.add(Dense(self.actionSize, activation="linear", kernel_initializer="lecun_uniform"))
+        model.compile(loss="mse", optimizer=RMSprop(lr=self.learningRate, rho=0.9, epsilon=1e-06))
+        model.summary()
+
+        return model
+
+    def calcQ(self, reward, nextTarget, done):
+        """
         traditional Q-learning:
             Q(s, a) += alpha * (reward(s,a) + gamma * max(Q(s') - Q(s,a))
         DQN:
             target = reward(s,a) + gamma * max(Q(s')
 
-    """
-    def __init__(self, inputs_laser, output_size, memorySize, discountFactor, learningRate, learnStart):
         """
-        Parameters:
-            - inputs_laser: inputs_laser size
-            - outputs: output size
-            - memorySize: size of the memory that will store each state
-            - discountFactor: the discount factor (gamma)
-            - learningRate: learning rate
-            - learnStart: steps to happen before for learning. Set to 128
-        """
-        self.input_laser_size = inputs_laser
-        self.output_size = output_size
-        self.memory = memory.Memory(memorySize)
-        self.discountFactor = discountFactor
-        self.learnStart = learnStart
-        self.learningRate = learningRate
-
-        try:
-            os.mkdir("/tmp/gazebo_gym_experiments/")
-        except Exception:
-            pass
-
-    def initNetworks(self):
-        model = self.createModel(self.output_size, self.learningRate)
-        self.model = model
-
-        targetModel = self.createModel(self.output_size, self.learningRate)
-        self.targetModel = targetModel
-
-    def createModel(self, output_size, learningRate):
-        model = Sequential()
-        dropout = 0.2
-
-        model.add(Dense(64, input_shape=(self.input_laser_size,), activation='relu', kernel_initializer='lecun_uniform'))
-
-        model.add(Dense(64, activation='relu', kernel_initializer='lecun_uniform'))
-        model.add(Dropout(dropout))
-
-        model.add(Dense(self.output_size, kernel_initializer='lecun_uniform'))
-        model.add(Activation('linear'))
-        model.compile(loss='mse', optimizer=RMSprop(lr=learningRate, rho=0.9, epsilon=1e-06))
-        model.summary()
-
-        return model
-
-
-    def backupNetwork(self, model, backup):
-        weightMatrix = []
-        for layer in model.layers:
-            weights = layer.get_weights()
-            weightMatrix.append(weights)
-        i = 0
-        for layer in backup.layers:
-            weights = weightMatrix[i]
-            layer.set_weights(weights)
-            i += 1
-
-    def updateTargetNetwork(self):
-        self.backupNetwork(self.model, self.targetModel)
-
-    # predict Q values for all the actions
-    def getQValues(self, state):
-        state = np.asarray(state)
-        predicted = self.model.predict(state.reshape(1,len(state)))
-        return predicted[0]
-
-    def getTargetQValues(self, state):
-        #predicted = self.targetModel.predict(state.reshape(1,len(state)))
-        predicted = self.targetModel.predict(state.reshape(1,len(state)))
-
-        return predicted[0]
-
-    def getMaxQ(self, qValues):
-        return np.max(qValues)
-
-    def getMaxIndex(self, qValues):
-        return np.argmax(qValues)
-
-    # calculate the target function
-    def calculateTarget(self, qValuesNewState, reward, isFinal):
-        """
-        target = reward(s,a) + gamma * max(Q(s')
-        """
-        if isFinal:
+        if done:
             return reward
-        else : 
-            return reward + self.discountFactor * self.getMaxQ(qValuesNewState)
+        else:
+            return reward + self.discountFactor * np.amax(nextTarget)
 
-    # select the action with the highest Q value
-    def selectAction(self, qValues, explorationRate):
-        rand = random.random()
-        if rand < explorationRate :
-            action = np.random.randint(1, 3)
-        else :
-            action = self.getMaxIndex(qValues)
-        return action
+    def updateTargetModel(self):
+        self.targetModel.set_weights(self.model.get_weights())
 
-    def selectActionByProbability(self, qValues, bias):
-        qValueSum = 0
-        shiftBy = 0
-        for value in qValues:
-            if value + shiftBy < 0:
-                shiftBy = - (value + shiftBy)
-        shiftBy += 1e-06
+    def calcAction(self, state):
+        if np.random.rand() <= self.epsilon:
+            self.qValue = np.zeros(self.actionSize)
+            return random.randrange(self.actionSize)
+        else:
+            qValue = self.model.predict(state.reshape(1, self.stateSize))
+            self.qValue = qValue
+            return np.argmax(qValue[0])
+    
+    def appendMemory(self, state, action, reward, nextState, done):
+        self.memory.append((state, action, reward, nextState, done))
 
-        for value in qValues:
-            qValueSum += (value + shiftBy) ** bias
+    def trainModel(self, target=False):
+        miniBatch = random.sample(self.memory, self.batchSize)
+        xBatch = np.empty((0, self.stateSize), dtype=np.float64)
+        yBatch = np.empty((0, self.actionSize), dtype=np.float64)
 
-        probabilitySum = 0
-        qValueProbabilities = []
-        for value in qValues:
-            probability = ((value + shiftBy) ** bias) / float(qValueSum)
-            qValueProbabilities.append(probability + probabilitySum)
-            probabilitySum += probability
-        qValueProbabilities[len(qValueProbabilities) - 1] = 1
+        for i in range(self.batchSize):
+            state = miniBatch[i][0]
+            action = miniBatch[i][1]
+            reward = miniBatch[i][2]
+            nextState = miniBatch[i][3]
+            done = miniBatch[i][4]
 
-        rand = random.random()
-        i = 0
-        for value in qValueProbabilities:
-            if (rand <= value):
-                return i
-            i += 1
+            qValue = self.model.predict(state.reshape(1, len(state)))
+            self.qValue = qValue
 
-    def addMemory(self, state, action, reward, newState, isFinal):
-        self.memory.addMemory(state, action, reward, newState, isFinal)
+            if target:
+                nextTarget = self.targetModel.predict(nextState.reshape(1, len(nextState)))
 
-    def learnOnLastState(self):
-        if self.memory.getCurrentSize() >= 1:
-            return self.memory.getMemory(self.memory.getCurrentSize() - 1)
+            else:
+                nextTarget = self.model.predict(nextState.reshape(1, len(nextState)))
 
-    def learnOnMiniBatch(self, miniBatchSize, useTargetNetwork=True):
-        # Do not learn until we've got self.learnStart samples        
-        if self.memory.getCurrentSize() > self.learnStart:
-            # learn in batches of 128
-            miniBatch = self.memory.getMiniBatch(miniBatchSize)
-            X_batch = np.empty((0,self.input_laser_size), dtype = np.float64)
-            Y_batch = np.empty((0,self.output_size), dtype = np.float64)
-            for sample in miniBatch:
-                isFinal = sample['isFinal']
-                state = sample['state']
-                action = sample['action']
-                reward = sample['reward']
-                newState = sample['newState']
+            nextQValue = self.calcQ(reward, nextTarget, done)
 
-                qValues = self.getQValues(state)
-                if useTargetNetwork:
-                    qValuesNewState = self.getTargetQValues(newState)
-                else :
-                    qValuesNewState = self.getQValues(newState)
-                targetValue = self.calculateTarget(qValuesNewState, reward, isFinal)
+            xBatch = np.append(xBatch, np.array([state.copy()]), axis=0)
+            ySample = qValue.copy()
 
-                X_batch = np.append(X_batch, np.array([state.copy()]), axis=0)
-                Y_sample = qValues.copy()
-                Y_sample[action] = targetValue
-                Y_batch = np.append(Y_batch, np.array([Y_sample]), axis=0)
-                if isFinal:
-                    X_batch = np.append(X_batch, np.array([newState.copy()]), axis=0)
-                    Y_batch = np.append(Y_batch, np.array([[reward]*self.output_size]), axis=0)
-            self.model.fit(X_batch, Y_batch, batch_size = len(miniBatch), nb_epoch=1, verbose = 0)
+            ySample[0][action] = nextQValue
+            yBatch = np.append(yBatch, np.array([ySample[0]]), axis=0)
 
-    def saveModel(self, path):
-        self.model.save(path)
+            if done:
+                xBatch = np.append(xBatch, np.array([nextState.copy()]), axis=0)
+                yBatch = np.append(yBatch, np.array([[reward] * self.actionSize]), axis=0)
 
-    def loadWeights(self, path):
-        self.model.set_weights(load_model(path).get_weights())
+        self.model.fit(xBatch, yBatch, batch_size=self.batchSize, epochs=1, verbose=0)
 
-def detect_monitor_files(training_dir):
-    return [os.path.join(training_dir, f) for f in os.listdir(training_dir) if f.startswith('openaigym')]
-
-def clear_monitor_files(training_dir):
-    files = detect_monitor_files(training_dir)
-    if len(files) == 0:
-        return
-    for file in files:
-        print (file)
-        os.unlink(file)
 
 if __name__ == '__main__':
-    env = GazeboTurtlebot3DQLearnEnv()
-    #REMEMBER!: turtlebot_nn_setup.bash must be executed.
-    outdir = '/tmp/gazebo_gym_experiments/'
+    env = MantisGymEnv()
+    stateSize = env.stateSize
+    actionSize = env.actionSize
 
-    continue_execution = False
-    #fill this if continue_execution=True
+    agent = Agent(stateSize, actionSize)
 
-    weights_path = '/tmp/turtle_c2_dqn_ep200.h5' 
-    monitor_path = '/tmp/turtle_c2_dqn_ep200'
-    params_json  = '/tmp/turtle_c2_dqn_ep200.json'
+    continueFromFiles = False
+    agent.loadEpisodeFrom = 0
+    if continueFromFiles:
+        agent.model.set_weights(load_model(agent.savePath+str(agent.loadEpisodeFrom)+".h5").get_weights())
 
-    if not continue_execution:
-        #Each time we take a sample and update our weights it is called a mini-batch. 
-        #Each time we run through the entire dataset, it's called an epoch.
-        #PARAMETER LIST
-        epochs = 10000
-        steps = 10000
-        updateTargetNetwork = 10000
-        explorationRate = 1
-        minibatch_size = 64
-        learnStart = 64
-        learningRate = 0.00025
-        discountFactor = 0.99
-        memorySize = 1000000
-        network_laser_inputs = 182
-        output_size = 3 # Three actions we have
-        current_epoch = 0
+        with open(agent.savePath+str(agent.loadEpisodeFrom)+'.json') as outfile:
+            param = json.load(outfile)
+            agent.epsilon = param.get('epsilon')
 
-        deepQ = DeepQ(network_laser_inputs, output_size, memorySize, discountFactor, learningRate, learnStart)
-        deepQ.initNetworks()
-    else:
-        #Load weights, monitor info and parameter info.
-        #ADD TRY CATCH fro this else
-        print("Continue to learning from old files")
-        time.sleep(5)
-        with open(params_json) as outfile:
-            d = json.load(outfile)
-            epochs = d.get('epochs')
-            steps = d.get('steps')
-            updateTargetNetwork = d.get('updateTargetNetwork')
-            explorationRate = d.get('explorationRate')
-            minibatch_size = d.get('minibatch_size')
-            learnStart = d.get('learnStart')
-            learningRate = d.get('learningRate')
-            discountFactor = d.get('discountFactor')
-            memorySize = d.get('memorySize')
-            network_laser_inputs = d.get('network_laser_inputs')
-            output_size = d.get('output_size')
-            current_epoch = d.get('current_epoch')
-
-        deepQ = DeepQ(network_laser_inputs, output_size, memorySize, discountFactor, learningRate, learnStart)
-        deepQ.initNetworks()
-        deepQ.loadWeights(weights_path)
-
-        clear_monitor_files(outdir)
-        copy_tree(monitor_path,outdir)
-
-    last100Scores = [0] * 100
-    last100ScoresIndex = 0
-    last100Filled = False
     stepCounter = 0
-    highest_reward = 0
 
-    start_time = time.time()
+    startTime = time.time()
 
-    #start iterating from 'current epoch'.
+    for epoch in range(agent.loadEpisodeFrom + 1, agent.episodeCount):
+        done = False
+        state = env.reset()
+        score = 0
 
-    for epoch in range(current_epoch+1, epochs+1, 1):
-        observation = env.reset()
-        cumulated_reward = 0
+        for t in range(999999):
+            action = agent.calcAction(state)
+            nextState, reward, done = env.step(action)
+            agent.appendMemory(state, action, reward, nextState, done)
 
-        # number of timesteps
-        for t in range(steps):
-            # env.render()
-            qValues = deepQ.getQValues(observation)
+            if len(agent.memory) >= agent.learnStart:
+                if stepCounter <= agent.targetUpdateCount:
+                    agent.trainModel(False)
+                else:
+                    agent.trainModel(True)
 
-            action = deepQ.selectAction(qValues, explorationRate)
+            score += reward
+            state = nextState
+            
+            if epoch % agent.saveModelAtEvery == 0:
+                weightsPath = agent.savePath + str(epoch) + '.h5'
+                paramPath = agent.savePath + str(epoch) + '.json'
+                print("Saving model as " + weightsPath[-3:])
+                agent.model.save(weightsPath)
+                with open(paramPath, 'w') as outfile:
+                    json.dump(paramDictionary, outfile)
 
-            newObservation, reward, done, info = env.step(action)
-
-            cumulated_reward += reward
-            if highest_reward < cumulated_reward:
-                highest_reward = cumulated_reward
-
-            deepQ.addMemory(observation, action, reward, newObservation, done)
-
-            if stepCounter >= learnStart:
-                if stepCounter <= updateTargetNetwork:
-                    deepQ.learnOnMiniBatch(minibatch_size, False)
-                else :
-                    deepQ.learnOnMiniBatch(minibatch_size, True)
-
-            observation = newObservation
-
-            if (t >= 1000):
-                print ("reached the end! :D")
+            if (t >= agent.timeOutLim):
+                print("Time out")
                 done = True
 
             if done:
-                last100Scores[last100ScoresIndex] = t
-                last100ScoresIndex += 1
-                if last100ScoresIndex >= 100:
-                    last100Filled = True
-                    last100ScoresIndex = 0
-                if not last100Filled:
-                    print ("EP "+str(epoch)+" - {} timesteps".format(t+1)+"   Exploration="+str(round(explorationRate, 2)))
-                else :
-                    m, s = divmod(int(time.time() - start_time), 60)
-                    h, m = divmod(m, 60)
-                    print ("EP "+str(epoch)+" - {} timesteps".format(t+1)+" - last100 Steps : "+str((sum(last100Scores)/len(last100Scores)))+" - Cumulated R: "+str(cumulated_reward)+"   Eps="+str(round(explorationRate, 2))+"     Time: %d:%02d:%02d" % (h, m, s))
-                    if (epoch)%100==0:
-                        #save model weights and monitoring data every 100 epochs. 
-                        deepQ.saveModel('/tmp/turtle_c2_dqn_ep'+str(epoch)+'.h5')
+                agent.updateTargetModel()
+                m, s = divmod(int(time.time() - startTime), 60)
+                h, m = divmod(m, 60)
 
-                        copy_tree(outdir,'/tmp/turtle_c2_dqn_ep'+str(epoch))
-                        #save simulation parameters.
-                        parameter_keys = ['epochs','steps','updateTargetNetwork','explorationRate','minibatch_size','learnStart','learningRate','discountFactor','memorySize','network_laser_inputs','current_epoch']
-                        parameter_values = [epochs, steps, updateTargetNetwork, explorationRate, minibatch_size, learnStart, learningRate, discountFactor, memorySize, network_laser_inputs, epoch]
-                        parameter_dictionary = dict(zip(parameter_keys, parameter_values))
-                        with open('/tmp/turtle_c2_dqn_ep'+str(epoch)+'.json', 'w') as outfile:
-                            json.dump(parameter_dictionary, outfile)
+                print('Ep:'+str(epoch)+' score: '+str(score)+' memory: '+str(len(agent.memory))+' epsilon: '+str(agent.epsilon)+' time: '+str(h)+':'+str(m)+':'+str(s))
+                paramKeys = ['epsilon']
+                paramValues = [agent.epsilon]
+                paramDictionary = dict(zip(paramKeys, paramValues))
                 break
 
             stepCounter += 1
-            if stepCounter % updateTargetNetwork == 0:
-                deepQ.updateTargetNetwork()
-                print ("updating target network")
+            if stepCounter % agent.targetUpdateCount == 0:
+                print("UPDATE TARGET NETWORK")
 
-        explorationRate *= 0.995 #epsilon decay
-        # explorationRate -= (2.0/epochs)
-        explorationRate = max (0.05, explorationRate)
+        if agent.epsilon > agent.epsilonMin:
+            agent.epsilon *= agent.epsilonDecay
+
+"""
+Problem 1 = TragetUpdate ne olaki neden sadece print var
+Problem 2 = Done olunca qValue reward * actionSize oluyor. Ben hedefe ulasinca da done true ettigim icin bir sorun olur mu ki
+Problem 3 = neden max q sadece secilen aksiyon ile degistiriliyor
+"""
