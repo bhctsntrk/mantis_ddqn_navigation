@@ -6,6 +6,9 @@ import math
 
 import random
 
+from gazebo_msgs.srv import SpawnModel, DeleteModel
+from gazebo_msgs.msg import ModelStates
+
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Point
@@ -13,6 +16,92 @@ from nav_msgs.msg import Odometry
 import tf
 from sensor_msgs.msg import LaserScan
 from std_srvs.srv import Empty
+
+class GoalController():
+    def __init__(self):
+        self.model_path = "../models/gazebo/goal_sign/model.sdf"
+        f = open(self.model_path, 'r')
+        self.model = f.read()
+
+        self.goal_position = Pose()
+        self.goal_position.position.x = None  # Initial positions
+        self.goal_position.position.y = None
+        self.last_goal_x = self.goal_position.position.x
+        self.last_goal_y = self.goal_position.position.y
+
+        self.model_name = 'goal_sign'
+        self.check_model = False
+
+    def respawnModel(self):
+        # Spawn goal model
+        spawn = False
+        for i in range(5):
+            if not self.check_model:
+                try:
+                    rospy.wait_for_service('gazebo/spawn_sdf_model')
+                    spawn_model_prox = rospy.ServiceProxy('gazebo/spawn_sdf_model', SpawnModel)
+                    spawn_model_prox(self.model_name, self.model, 'robotos_name_space', self.goal_position, "world")
+                    spawn = True
+                    self.check_model = True
+                    break
+                except Exception as e:
+                    rospy.logfatal("Error when spawning the goal sign " + str(e))
+            else:
+                rospy.logwarn("Trying to spawn goal sign ..." + str(i))
+                time.sleep(2)
+        
+        if not spawn:
+            rospy.logfatal("Error when spawning the goal sign")
+        
+
+    def deleteModel(self):
+        # Delete goal model
+        while True:
+            if self.check_model:
+                try:
+                    rospy.wait_for_service('gazebo/delete_model')
+                    del_model_prox = rospy.ServiceProxy('gazebo/delete_model', DeleteModel)
+                    del_model_prox(self.model_name)
+                    self.check_model = False
+                    break
+                except Exception as e:
+                    rospy.logfatal("Error when deleting the goal sign " + str(e))
+            else:
+                break
+
+    def calcTargetPoint(self):
+        self.deleteModel()
+
+        goal1_x_list = [1.5, -1.5]
+        goal1_y_list = [0.5, -0.5]
+
+        goal2_y_list = [1.5, -1.5]
+        goal2_x_list = [0.5, -0.5]
+
+        while True:
+            if random.choice([True, False]):
+                self.goal_position.position.y = random.choice(goal2_y_list)
+                self.goal_position.position.x = random.choice(goal2_x_list)
+            else:
+                self.goal_position.position.y = random.choice(goal1_y_list)
+                self.goal_position.position.x = random.choice(goal1_x_list)
+
+            if self.last_goal_x != self.goal_position.position.x:
+                if self.last_goal_y != self.goal_position.position.y:
+                    break
+
+        time.sleep(0.5)
+        self.respawnModel()
+
+        self.last_goal_x = self.goal_position.position.x
+        self.last_goal_y = self.goal_position.position.y
+
+        rospy.logwarn("New goal position : " + str(self.goal_position.position.x) + " , " + str(self.goal_position.position.y))
+
+        return self.goal_position.position.x, self.goal_position.position.y
+
+    def getTargetPoint(self):
+        return self.goal_position.position.x, self.goal_position.position.y
 
 
 class MantisGymEnv():
@@ -31,7 +120,7 @@ class MantisGymEnv():
         self.minCrashRange = 0.2  # Asume crash below this distance
         self.laserMinRange = 0.2
         self.laserMaxRange = 10.0
-        self.stateSize = 362
+        self.stateSize = 364
         self.actionSize = 5
 
         self.targetDistance = 0  # Distance to target
@@ -41,6 +130,7 @@ class MantisGymEnv():
 
         # Means robot reached target point. True at beginning to calc random point in reset func
         self.isTargetReached = True
+        self.goalCont = GoalController()
 
     def pauseGazebo(self):
         # Pause the simulation
@@ -66,39 +156,13 @@ class MantisGymEnv():
         except Exception:
             print("/gazebo/reset_simulation service call failed")
 
-    def calcTargetPoint(self):
-        # Calc target point
-        # maze 2 limits
-        #xLimits = [[-1.4, -0.211], [-0.823, 2.192]]
-        #yLimits = [[-2.603, -1.185], [-0.763, 0.47]]
-
-        # maze 5 limits to create random target point in map
-        #xLimits = [[-2, 5], [4, 5]]
-        #yLimits = [[-7, -8], [-8, 1]]
-
-        # stage 4 limits to create random target point in map
-        # xLimits = [[0, 1], [0, 1], [1.5, 2], [-0.7, -1.2], [-2, -1], [1, 2]]
-        # yLimits = [[1, 2], [-2, -1], [-2, 0], [-2, -1], [0.8, 1.2], [0.8, 1.2]]
-
-        # stage 1 limits to create random target point in map
-        xLimits = [[-1.8, 1.8], [-1.8, 1.8], [0.8, 1.8], [-1.8, -0.8]]
-        yLimits = [[0.8, 1.8], [-1.8, -0.8], [-1.8, 1.8], [-1.8, 1.8]]
-
-        randomInt = random.randint(0, len(xLimits)-1)
-
-        self.targetPointX = random.uniform(*xLimits[randomInt])
-        self.targetPointY = random.uniform(*yLimits[randomInt])
-
-        rospy.logerr("New Target Point (" + str(self.targetPointX) +
-                     ", " + str(self.targetPointY) + ")")
-
     def getLaserData(self):
         # Return laser 2D array of robot scanner
         try:
             laserData = rospy.wait_for_message('/scan', LaserScan, timeout=5)
             return laserData
         except Exception as e:
-            rospy.logerr("Error to get laser data " + str(e))
+            rospy.logfatal("Error to get laser data " + str(e))
 
     def getOdomData(self):
         # Return yaw, robotX, robotY of robot
@@ -118,7 +182,7 @@ class MantisGymEnv():
             robotY = odomData.position.y
             return yaw, robotX, robotY
         except Exception as e:
-            rospy.logerr("Error to get odom data " + str(e))
+            rospy.logfatal("Error to get odom data " + str(e))
 
     def calcHeadingAngle(self, targetPointX, targetPointY, yaw, robotX, robotY):
         # Return heading angle from robot to target
@@ -154,12 +218,17 @@ class MantisGymEnv():
                 laserData[i] = self.laserMaxRange
             if np.isnan(laserData[i]):
                 laserData[i] = 0
-        return laserData + [heading, distance], isCrash
+
+        obstacleMinRange = round(min(laserData), 2)
+        obstacleAngle = np.argmin(laserData)
+
+        return laserData + [heading, distance, obstacleMinRange, obstacleAngle], isCrash
 
     def step(self, action):
         self.unpauseGazebo()
 
         # Move
+
         maxAngularVel = 1.5
         angVel = ((self.actionSize - 1)/2 - action) * maxAngularVel / 2
 
@@ -168,6 +237,33 @@ class MantisGymEnv():
         velCmd.angular.z = angVel
         self.velPub.publish(velCmd)
 
+        """
+        if action == 0: #FORWARD
+            velCmd = Twist()
+            velCmd.linear.x = 0.2
+            velCmd.angular.z = 0.0
+            self.velPub.publish(velCmd)
+        elif action == 1: #LEFT
+            velCmd = Twist()
+            velCmd.linear.x = 0.2
+            velCmd.angular.z = 1.0
+            self.velPub.publish(velCmd)
+        elif action == 2: #RIGHT
+            velCmd = Twist()
+            velCmd.linear.x = 0.2
+            velCmd.angular.z = -1.0
+            self.velPub.publish(velCmd)
+        elif action == 3: #BRAKE LEFT
+            velCmd = Twist()
+            velCmd.linear.x = 0.2
+            velCmd.angular.z = 2.2
+            self.velPub.publish(velCmd)
+        elif action == 4: #BRAKE RIGHT
+            velCmd = Twist()
+            velCmd.linear.x = 0.2
+            velCmd.angular.z = -2.2
+            self.velPub.publish(velCmd)            
+        """
         # Observe
         laserData = self.getLaserData()
         odomData = self.getOdomData()
@@ -180,24 +276,24 @@ class MantisGymEnv():
         if isCrash:
             done = True
 
-        distanceToTarget = state[-1]
+        distanceToTarget = state[-3]
 
         if distanceToTarget < 0.2:  # Reached to target
             done = True
 
         if isCrash:
-            reward = -200
+            reward = -150
         elif done:
             # Reached to target
-            rospy.logerr("Reached to target!")
+            rospy.logwarn("Reached to target!")
             reward = 200
             self.isTargetReached = True
         else:
             yawReward = []
-            currentDistance = state[-1]
-            heading = state[-2]
+            currentDistance = state[-3]
+            heading = state[-4]
 
-            for i in range(5):
+            for i in range(self.actionSize):
                 angle = -math.pi / 4 + heading + \
                     (math.pi / 8 * i) + math.pi / 2
                 tr = 1 - 4 * \
@@ -215,7 +311,7 @@ class MantisGymEnv():
         self.resetGazebo()
 
         if self.isTargetReached:
-            self.calcTargetPoint()
+            self.targetPointX, self.targetPointY = self.goalCont.calcTargetPoint()
             self.isTargetReached = False
 
         # Unpause simulation to make observation
