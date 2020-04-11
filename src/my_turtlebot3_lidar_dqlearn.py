@@ -12,6 +12,34 @@ from keras.optimizers import RMSprop
 from keras.layers import Dense, Dropout
 from collections import deque
 
+import matplotlib.pyplot as plt
+import sys
+import signal
+
+class LivePlot():
+    # Live plot with matplotlib for epoch, score, inform text
+    def __init__(self):
+        self.x = [0]
+        self.y = [0]
+        self.fig = plt.figure(0)
+    
+    def update(self, x, y, yTitle, text, updtScore=True):
+        if updtScore:
+            self.x.append(x)
+            self.y.append(y)
+
+        self.fig.canvas.set_window_title(text)
+        plt.xlabel('Epoch', fontsize=13)
+        plt.ylabel(yTitle, fontsize=13)
+        plt.style.use('Solarize_Light2')
+        plt.plot(self.x, self.y)
+        plt.draw()
+        plt.pause(0.5)
+        plt.clf()
+
+
+CONTINUEFROMFILES = True  # Load weights from files and continue to learn
+CONTINUEFROM = 200  # If continue to learn on old weight files enter an episode number to continue
 class Agent:
 
     def __init__(self, stateSize, actionSize):
@@ -21,7 +49,7 @@ class Agent:
         self.stateSize = stateSize  # Step size get from env
         self.actionSize = actionSize  # Action size get from env
         self.targetUpdateCount = 2000  # Update target model at every targetUpdateCount
-        self.saveModelAtEvery = 20  # Save model at every saveModelAtEvery epoch
+        self.saveModelAtEvery = 10  # Save model at every saveModelAtEvery epoch
         self.discountFactor = 0.99  # For qVal calculations
         self.learningRate = 0.00025  # For model
         self.epsilon = 1.0  # Exploit or Explore?
@@ -73,6 +101,7 @@ class Agent:
         self.targetModel.set_weights(self.model.get_weights())
 
     def calcAction(self, state):
+        # Return selected action
         if np.random.rand() <= self.epsilon:
             self.qValue = np.zeros(self.actionSize)
             return random.randrange(self.actionSize)
@@ -121,14 +150,16 @@ class Agent:
 
 
 if __name__ == '__main__':
+    score_plot = LivePlot()
     env = MantisGymEnv()
+
     stateSize = env.stateSize
     actionSize = env.actionSize
 
     agent = Agent(stateSize, actionSize)
 
-    continueFromFiles = False
-    agent.loadEpisodeFrom = 0
+    continueFromFiles = CONTINUEFROMFILES
+    agent.loadEpisodeFrom = CONTINUEFROM
     if continueFromFiles:
         agent.model.set_weights(load_model(agent.savePath+str(agent.loadEpisodeFrom)+".h5").get_weights())
 
@@ -144,8 +175,9 @@ if __name__ == '__main__':
         done = False
         state = env.reset()
         score = 0
+        cumulative_q_val = 0
 
-        for t in range(999999):
+        for t in range(1,999999):
             action = agent.calcAction(state)
             nextState, reward, done = env.step(action)
             agent.appendMemory(state, action, reward, nextState, done)
@@ -157,12 +189,20 @@ if __name__ == '__main__':
                     agent.trainModel(True)
 
             score += reward
+            cumulative_q_val += np.max(agent.qValue)
             state = nextState
+
+            avg_max_q_val_text = "Avg Max Q Val:{:.2f}  | ".format(cumulative_q_val/t)
+            reward_text = "Reward:{:.2f}  | ".format(reward)
+            action_text = "Action:{:.2f}  | ".format(action)
+
+            inform_text = avg_max_q_val_text + reward_text + action_text
+
+            score_plot.update(epoch, score, "Score", inform_text, updtScore=False)
             
             if epoch % agent.saveModelAtEvery == 0:
                 weightsPath = agent.savePath + str(epoch) + '.h5'
                 paramPath = agent.savePath + str(epoch) + '.json'
-                print("Saving model as " + weightsPath[-3:])
                 agent.model.save(weightsPath)
                 with open(paramPath, 'w') as outfile:
                     json.dump(paramDictionary, outfile)
@@ -176,7 +216,9 @@ if __name__ == '__main__':
                 m, s = divmod(int(time.time() - startTime), 60)
                 h, m = divmod(m, 60)
 
-                print('Ep:'+str(epoch)+' score: '+str(score)+' memory: '+str(len(agent.memory))+' epsilon: '+str(agent.epsilon)+' time: '+str(h)+':'+str(m)+':'+str(s))
+                print('Ep: {} | AvgMaxQVal: {:.2f} | CScore: {:.2f} | Mem: {} | Epsilon: {:.2f} | Time: {}:{}:{}'.format(epoch, cumulative_q_val/t, score, len(agent.memory), agent.epsilon, h, m, s))
+                score_plot.update(epoch, score, "Score", inform_text, updtScore=True)
+
                 paramKeys = ['epsilon']
                 paramValues = [agent.epsilon]
                 paramDictionary = dict(zip(paramKeys, paramValues))
@@ -184,7 +226,7 @@ if __name__ == '__main__':
 
             stepCounter += 1
             if stepCounter % agent.targetUpdateCount == 0:
-                print("UPDATE TARGET NETWORK")
+                print("UPDATE TARGET NETWORK???")
 
         if agent.epsilon > agent.epsilonMin:
             agent.epsilon *= agent.epsilonDecay

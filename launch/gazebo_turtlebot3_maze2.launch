@@ -1,4 +1,5 @@
 <launch>
+  <arg name="gui" default="false"/>
   <arg name="model" default="waffle" doc="model type [burger, waffle, waffle_pi]"/>
   <arg name="x_pos" default="0.0"/>
   <arg name="y_pos" default="0.0"/>
@@ -8,7 +9,7 @@
     <arg name="world_name" value="$(find mantis_dqlearning)/worlds/maze2.world"/>
     <arg name="paused" value="false"/>
     <arg name="use_sim_time" value="true"/>
-    <arg name="gui" value="true"/>
+    <arg name="gui" value="$(arg gui)"/>
     <arg name="headless" value="false"/>
     <arg name="debug" value="false"/>
   </include>  

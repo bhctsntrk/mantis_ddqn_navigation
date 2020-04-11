@@ -21,6 +21,7 @@ ros-melodic-position-controllers \
 ros-melodic-diff-drive-controller \
 "ros-melodic-turtlebot3*" \
 python3-pip && \
+python3-tk \
 pip3 install keras tensorflow matplotlib gym rospkg catkin_pkg defusedxml opencv-python scikit-image
 
 ## Burasi cv_bridge python3 icin derleyecek kisim oluyor
