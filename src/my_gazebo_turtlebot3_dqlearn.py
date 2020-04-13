@@ -72,10 +72,10 @@ class GoalController():
     def calcTargetPoint(self):
         self.deleteModel()
 
-        goal1_x_list = [1.5, -1.5]
+        goal1_x_list = [1.5, 0, -1.5]
         goal1_y_list = [0.5, -0.5]
 
-        goal2_y_list = [1.5, -1.5]
+        goal2_y_list = [1.5, 0, -1.5]
         goal2_x_list = [0.5, -0.5]
 
         while True:
@@ -116,11 +116,11 @@ class MantisGymEnv():
         self.reset_proxy = rospy.ServiceProxy(
             '/gazebo/reset_simulation', Empty)
 
-        self.laserPointCount = 360  # 180 laser point in one time
+        self.laserPointCount = 24  # 24 laser point in one time
         self.minCrashRange = 0.2  # Asume crash below this distance
         self.laserMinRange = 0.2
         self.laserMaxRange = 10.0
-        self.stateSize = 364
+        self.stateSize = self.laserPointCount + 4  # Laser(arr), heading, distance, obstacleMinRange, obstacleAngle
         self.actionSize = 5
 
         self.targetDistance = 0  # Distance to target
@@ -279,15 +279,16 @@ class MantisGymEnv():
         distanceToTarget = state[-3]
 
         if distanceToTarget < 0.2:  # Reached to target
-            done = True
+            self.isTargetReached = True
 
         if isCrash:
             reward = -150
-        elif done:
+        elif self.isTargetReached:
             # Reached to target
             rospy.logwarn("Reached to target!")
             reward = 200
-            self.isTargetReached = True
+            self.targetPointX, self.targetPointY = self.goalCont.calcTargetPoint()
+            self.isTargetReached = False
         else:
             yawReward = []
             currentDistance = state[-3]
@@ -321,7 +322,7 @@ class MantisGymEnv():
         self.pauseGazebo()
 
         state, isCrash = self.calculateState(laserData, odomData)
-        self.targetDistance = state[-1]
+        self.targetDistance = state[-3]
         self.stateSize = len(state)
 
         return np.asarray(state)
