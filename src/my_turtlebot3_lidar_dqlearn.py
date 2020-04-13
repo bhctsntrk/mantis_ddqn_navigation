@@ -37,12 +37,10 @@ class LivePlot():
         plt.pause(0.5)
         plt.clf()
 
-
-CONTINUEFROMFILES = True  # Load weights from files and continue to learn
-CONTINUEFROM = 200  # If continue to learn on old weight files enter an episode number to continue
 class Agent:
 
     def __init__(self, stateSize, actionSize):
+        self.isTrainActive = True  # Train model or just predict
         self.loadModel = False  # Load model from file
         self.loadEpisodeFrom = 0  # Start to learn from this episode
         self.episodeCount = 10000  # Total episodes
@@ -150,7 +148,7 @@ class Agent:
 
 
 if __name__ == '__main__':
-    score_plot = LivePlot()
+    #score_plot = LivePlot()
     env = MantisGymEnv()
 
     stateSize = env.stateSize
@@ -158,9 +156,7 @@ if __name__ == '__main__':
 
     agent = Agent(stateSize, actionSize)
 
-    continueFromFiles = CONTINUEFROMFILES
-    agent.loadEpisodeFrom = CONTINUEFROM
-    if continueFromFiles:
+    if agent.loadModel:
         agent.model.set_weights(load_model(agent.savePath+str(agent.loadEpisodeFrom)+".h5").get_weights())
 
         with open(agent.savePath+str(agent.loadEpisodeFrom)+'.json') as outfile:
@@ -175,30 +171,28 @@ if __name__ == '__main__':
         done = False
         state = env.reset()
         score = 0
-        cumulative_q_val = 0
 
         for t in range(1,999999):
             action = agent.calcAction(state)
             nextState, reward, done = env.step(action)
             agent.appendMemory(state, action, reward, nextState, done)
 
-            if len(agent.memory) >= agent.learnStart:
+            if agent.isTrainActive and len(agent.memory) >= agent.learnStart:
                 if stepCounter <= agent.targetUpdateCount:
                     agent.trainModel(False)
                 else:
                     agent.trainModel(True)
 
             score += reward
-            cumulative_q_val += np.max(agent.qValue)
             state = nextState
 
-            avg_max_q_val_text = "Avg Max Q Val:{:.2f}  | ".format(cumulative_q_val/t)
+            avg_max_q_val_text = "Avg Max Q Val:{:.2f}  | ".format(np.max(agent.qValue))
             reward_text = "Reward:{:.2f}  | ".format(reward)
             action_text = "Action:{:.2f}  | ".format(action)
 
             inform_text = avg_max_q_val_text + reward_text + action_text
 
-            score_plot.update(epoch, score, "Score", inform_text, updtScore=False)
+            #score_plot.update(epoch, score, "Score", inform_text, updtScore=False)
             
             if epoch % agent.saveModelAtEvery == 0:
                 weightsPath = agent.savePath + str(epoch) + '.h5'
@@ -216,8 +210,8 @@ if __name__ == '__main__':
                 m, s = divmod(int(time.time() - startTime), 60)
                 h, m = divmod(m, 60)
 
-                print('Ep: {} | AvgMaxQVal: {:.2f} | CScore: {:.2f} | Mem: {} | Epsilon: {:.2f} | Time: {}:{}:{}'.format(epoch, cumulative_q_val/t, score, len(agent.memory), agent.epsilon, h, m, s))
-                score_plot.update(epoch, score, "Score", inform_text, updtScore=True)
+                print('Ep: {} | AvgMaxQVal: {:.2f} | CScore: {:.2f} | Mem: {} | Epsilon: {:.2f} | Time: {}:{}:{}'.format(epoch, np.max(agent.qValue), score, len(agent.memory), agent.epsilon, h, m, s))
+                #score_plot.update(epoch, score, "Score", inform_text, updtScore=True)
 
                 paramKeys = ['epsilon']
                 paramValues = [agent.epsilon]
