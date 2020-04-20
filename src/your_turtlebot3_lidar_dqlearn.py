@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from my_gazebo_turtlebot3_dqlearn import MantisGymEnv
+from your_gazebo_turtlebot3_dqlearn import MantisGymEnv
 
 import time
 import os
@@ -40,9 +40,9 @@ class LivePlot():
 class Agent:
 
     def __init__(self, stateSize, actionSize):
-        self.isTrainActive = False  # Train model or just predict
+        self.isTrainActive = True  # Train model or just predict
         self.loadModel = True  # Load model from file
-        self.loadEpisodeFrom = 900  # Start to learn from this episode
+        self.loadEpisodeFrom = 752  # Start to learn from this episode
         self.episodeCount = 10000  # Total episodes
         self.stateSize = stateSize  # Step size get from env
         self.actionSize = actionSize  # Action size get from env
@@ -175,6 +175,11 @@ if __name__ == '__main__':
         for t in range(1,999999):
             action = agent.calcAction(state)
             nextState, reward, done = env.step(action)
+
+            if score+reward > 2000 or score+reward < -2000:
+                print("Err in score calc!!!!!!!!!!!!!!!!!")
+                break
+
             agent.appendMemory(state, action, reward, nextState, done)
 
             if agent.isTrainActive and len(agent.memory) >= agent.learnStart:

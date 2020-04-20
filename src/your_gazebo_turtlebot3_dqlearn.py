@@ -6,15 +6,64 @@ import math
 
 import random
 
-from gazebo_msgs.srv import SpawnModel, DeleteModel
+from gazebo_msgs.srv import SpawnModel, DeleteModel, SetModelState
 
+from gazebo_msgs.msg import ModelState
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Point
+
 from nav_msgs.msg import Odometry
 import tf
 from sensor_msgs.msg import LaserScan
 from std_srvs.srv import Empty
+
+class AgentPosController():
+    # This class teleport agent when env.rest called
+    # Because we dont want the agent spawn same center place everytime
+    def __init__(self):
+        self.agent_model_name = "turtlebot3_waffle"
+
+    def teleportRandom(self):
+        # Teleport agent return new x and y point
+        model_state_msg = ModelState()
+
+        model_state_msg.model_name = self.agent_model_name
+        
+        # stage 2
+        xy_list = [
+            [0,0], [0.5,0.0],
+            [-0.5,1.0], [-0.5,-1.0], [-1.5,0.5], [-1.5,-0.5],
+            [1.0,1.5], [-1.5,1.5], [1.0,-1.5], [-1.5,-1.5]
+        ]
+        pose = Pose()
+        pose.position.x, pose.position.y = random.choice(xy_list)
+
+        model_state_msg.pose = pose
+        model_state_msg.twist = Twist()
+
+        model_state_msg.reference_frame = "world"
+
+        isTeleportSuccess = False
+        for i in range(5):
+            if not isTeleportSuccess:
+                try:
+                    rospy.wait_for_service('/gazebo/set_model_state')
+                    telep_model_prox = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
+                    telep_model_prox(model_state_msg)
+                    isTeleportSuccess = True
+                    break
+                except Exception as e:
+                    rospy.logfatal("Error when teleporting agent " + str(e))
+            else:
+                rospy.logwarn("Trying to teleporting agent..." + str(i))
+                time.sleep(2)
+        
+        if not isTeleportSuccess:
+            rospy.logfatal("Error when teleporting agent")
+            return "Err", "Err"
+    
+        return pose.position.x, pose.position.y
 
 class GoalController():
     def __init__(self):
@@ -39,7 +88,7 @@ class GoalController():
                 try:
                     rospy.wait_for_service('gazebo/spawn_sdf_model')
                     spawn_model_prox = rospy.ServiceProxy('gazebo/spawn_sdf_model', SpawnModel)
-                    spawn_model_prox(self.model_name, self.model, 'ns1', self.goal_position, "world")
+                    spawn_model_prox(self.model_name, self.model, 'robotos_name_space', self.goal_position, "world")
                     isSpawnSuccess = True
                     self.check_model = True
                     break
@@ -141,6 +190,9 @@ class MantisGymEnv():
         # Means robot reached target point. True at beginning to calc random point in reset func
         self.isTargetReached = True
         self.goalCont = GoalController()
+        self.agentController = AgentPosController()
+
+        self.timeCounter = 0  # Keep the time to give more reward if completing early
 
     def pauseGazebo(self):
         # Pause the simulation
@@ -292,11 +344,11 @@ class MantisGymEnv():
             self.isTargetReached = True
 
         if isCrash:
-            reward = -150
+            reward = -150 + self.timeCounter
         elif self.isTargetReached:
             # Reached to target
             rospy.logwarn("Reached to target!")
-            reward = 200
+            reward = 200 + self.timeCounter
             self.targetPointX, self.targetPointY = self.goalCont.calcTargetPoint()
             self.isTargetReached = False
         else:
@@ -312,8 +364,13 @@ class MantisGymEnv():
                                               (2 * math.pi) / math.pi)[0])
                 yawReward.append(tr)
 
-            distanceRate = 2 ** (currentDistance / self.targetDistance)
+            try:
+                distanceRate = 2 ** (currentDistance / self.targetDistance)
+            except Exception:
+                distanceRate = int(2) ** (currentDistance // self.targetDistance)
+                print("Overflow err CurrentDistance = ", currentDistance, " TargetDistance = ", self.targetDistance)
             reward = ((round(yawReward[action] * 5, 2)) * distanceRate)
+            reward = reward + self.timeCounter
 
         return np.asarray(state), reward, done
 
@@ -321,9 +378,16 @@ class MantisGymEnv():
         # Resets the state of the environment and returns an initial observation.
         self.resetGazebo()
 
+        # Teleport turtlebot to a random point
+        agentX, agentY = self.agentController.teleportRandom()
+
         if self.isTargetReached:
-            self.targetPointX, self.targetPointY = self.goalCont.calcTargetPoint()
-            self.isTargetReached = False
+            while True:
+                self.targetPointX, self.targetPointY = self.goalCont.calcTargetPoint()
+                self.isTargetReached = False
+                if self.calcDistance(self.targetPointX, self.targetPointY, agentX, agentY) > 1:
+                    break
+                rospy.logerr("Re calculate target point!")
 
         # Unpause simulation to make observation
         self.unpauseGazebo()
