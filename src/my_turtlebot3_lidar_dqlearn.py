@@ -40,14 +40,14 @@ class LivePlot():
 class Agent:
 
     def __init__(self, stateSize, actionSize):
-        self.isTrainActive = True  # Train model or just predict
-        self.loadModel = False  # Load model from file
-        self.loadEpisodeFrom = 0  # Start to learn from this episode
+        self.isTrainActive = False  # Train model or just predict
+        self.loadModel = True  # Load model from file
+        self.loadEpisodeFrom = 900  # Start to learn from this episode
         self.episodeCount = 10000  # Total episodes
         self.stateSize = stateSize  # Step size get from env
         self.actionSize = actionSize  # Action size get from env
         self.targetUpdateCount = 2000  # Update target model at every targetUpdateCount
-        self.saveModelAtEvery = 10  # Save model at every saveModelAtEvery epoch
+        self.saveModelAtEvery = 2  # Save model at every saveModelAtEvery epoch
         self.discountFactor = 0.99  # For qVal calculations
         self.learningRate = 0.00025  # For model
         self.epsilon = 1.0  # Exploit or Explore?

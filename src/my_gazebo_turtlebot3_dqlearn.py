@@ -7,7 +7,6 @@ import math
 import random
 
 from gazebo_msgs.srv import SpawnModel, DeleteModel
-from gazebo_msgs.msg import ModelStates
 
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Pose
@@ -34,14 +33,14 @@ class GoalController():
 
     def respawnModel(self):
         # Spawn goal model
-        spawn = False
+        isSpawnSuccess = False
         for i in range(5):
             if not self.check_model:
                 try:
                     rospy.wait_for_service('gazebo/spawn_sdf_model')
                     spawn_model_prox = rospy.ServiceProxy('gazebo/spawn_sdf_model', SpawnModel)
-                    spawn_model_prox(self.model_name, self.model, 'robotos_name_space', self.goal_position, "world")
-                    spawn = True
+                    spawn_model_prox(self.model_name, self.model, 'ns1', self.goal_position, "world")
+                    isSpawnSuccess = True
                     self.check_model = True
                     break
                 except Exception as e:
@@ -50,7 +49,7 @@ class GoalController():
                 rospy.logwarn("Trying to spawn goal sign ..." + str(i))
                 time.sleep(2)
         
-        if not spawn:
+        if not isSpawnSuccess:
             rospy.logfatal("Error when spawning the goal sign")
         
 
@@ -71,12 +70,23 @@ class GoalController():
 
     def calcTargetPoint(self):
         self.deleteModel()
-
+        
+        # stage 2
+        
         goal1_x_list = [1.5, 0, -1.5]
         goal1_y_list = [0.5, -0.5]
 
         goal2_y_list = [1.5, 0, -1.5]
         goal2_x_list = [0.5, -0.5]
+        
+        # maze 2
+        '''     
+        goal1_x_list = [2.5, -2.5]
+        goal1_y_list = [2.5, 1.5, 0.5, -0.5, -1.5, -2.5]
+
+        goal2_y_list = [2.5, -2.5]
+        goal2_x_list = [2.5, 1.5, 0.5, -0.5, -1.5, -2.5]
+        '''
 
         while True:
             if random.choice([True, False]):
