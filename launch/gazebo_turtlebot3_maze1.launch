@@ -1,7 +1,7 @@
 <launch>
   <arg name="gui" default="false"/>
   <arg name="model" default="waffle" doc="model type [burger, waffle, waffle_pi]"/>
-  <arg name="x_pos" default="-0.0"/>
+  <arg name="x_pos" default="-1.0"/>
   <arg name="y_pos" default="0.0"/>
   <arg name="z_pos" default="0.0"/>
 
