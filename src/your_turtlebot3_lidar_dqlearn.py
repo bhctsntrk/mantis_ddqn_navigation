@@ -9,7 +9,7 @@ import random
 import numpy as np
 from keras.models import Sequential, load_model
 from keras.optimizers import RMSprop
-from keras.layers import Dense, Dropout
+from keras.layers import Dense, Dropout, Conv1D, Flatten, Reshape
 from collections import deque
 
 import matplotlib.pyplot as plt
@@ -40,26 +40,31 @@ class LivePlot():
 class Agent:
 
     def __init__(self, stateSize, actionSize):
+        self.useConvNet = False  # Use Conv1D network
         self.isTrainActive = True  # Train model or just predict
         self.loadModel = True  # Load model from file
-        self.loadEpisodeFrom = 752  # Start to learn from this episode
-        self.episodeCount = 10000  # Total episodes
+        self.loadEpisodeFrom = 7862  # Start to learn from this episode
+        self.episodeCount = 40000  # Total episodes
         self.stateSize = stateSize  # Step size get from env
         self.actionSize = actionSize  # Action size get from env
         self.targetUpdateCount = 2000  # Update target model at every targetUpdateCount
         self.saveModelAtEvery = 2  # Save model at every saveModelAtEvery epoch
         self.discountFactor = 0.99  # For qVal calculations
-        self.learningRate = 0.00025  # For model
+        self.learningRate = 0.0003  # For model
         self.epsilon = 1.0  # Exploit or Explore?
-        self.epsilonDecay = 0.99  # epsilon will multiplicated with this thing in every epoch
+        self.epsilonDecay = 0.99  # epsilon will multiplicated with this thing in every epoch  Default val 0.990
         self.epsilonMin = 0.05  # Epsilon never fall more then this
         self.batchSize = 64  # Size of a miniBatch
         self.learnStart = 64  # Start to train model from this step
-        self.memory = deque(maxlen=1000000)  # Main memory to keep batchs
-        self.timeOutLim = 500  # After this end the epoch
+        self.memory = deque(maxlen=200000)  # Main memory to keep batchs
+        self.timeOutLim = 700  # After this end the epoch
 
-        self.model = self.initNetwork()
-        self.targetModel = self.initNetwork()
+        if not self.useConvNet:
+            self.model = self.initNetwork()
+            self.targetModel = self.initNetwork()
+        else:
+            self.model = self.initConvNetwork()
+            self.targetModel = self.initConvNetwork()
 
         self.updateTargetModel()
 
@@ -73,11 +78,27 @@ class Agent:
         model = Sequential()
 
         model.add(Dense(64, input_shape=(self.stateSize,), activation="relu", kernel_initializer="lecun_uniform"))
-
         model.add(Dense(64, activation="relu", kernel_initializer="lecun_uniform"))
         model.add(Dropout(0.3))
         model.add(Dense(self.actionSize, activation="linear", kernel_initializer="lecun_uniform"))
         model.compile(loss="mse", optimizer=RMSprop(lr=self.learningRate, rho=0.9, epsilon=1e-06))
+        model.summary()
+
+        return model
+
+    def initConvNetwork(self):
+        model = Sequential()
+
+        model.add(Reshape((self.stateSize, 1), input_shape=(self.stateSize, )))
+        model.add(Conv1D(filters=16, kernel_size=5, strides=4, activation="relu"))
+        model.add(Conv1D(filters=32, kernel_size=3, strides=2, activation="relu"))
+
+        model.add(Flatten())
+
+        model.add(Dense(64, activation="relu"))
+        model.add(Dense(self.actionSize, activation="linear"))
+
+        model.compile(loss="mse", optimizer=RMSprop(lr=self.learningRate, rho=0.99, epsilon=0.1))
         model.summary()
 
         return model
@@ -176,11 +197,12 @@ if __name__ == '__main__':
             action = agent.calcAction(state)
             nextState, reward, done = env.step(action)
 
-            if score+reward > 2000 or score+reward < -2000:
-                print("Err in score calc!!!!!!!!!!!!!!!!!")
+            if score+reward > 10000 or score+reward < -10000:
+                print("Error Score is too high or too low! Resetting...")
                 break
 
-            agent.appendMemory(state, action, reward, nextState, done)
+            if agent.isTrainActive:
+                agent.appendMemory(state, action, reward, nextState, done)
 
             if agent.isTrainActive and len(agent.memory) >= agent.learnStart:
                 if stepCounter <= agent.targetUpdateCount:
@@ -225,7 +247,8 @@ if __name__ == '__main__':
 
             stepCounter += 1
             if stepCounter % agent.targetUpdateCount == 0:
-                print("UPDATE TARGET NETWORK???")
+                #print("UPDATE TARGET NETWORK???")
+                pass
 
         if agent.epsilon > agent.epsilonMin:
             agent.epsilon *= agent.epsilonDecay

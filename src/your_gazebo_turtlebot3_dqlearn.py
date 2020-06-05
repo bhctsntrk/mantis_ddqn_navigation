@@ -30,12 +30,30 @@ class AgentPosController():
 
         model_state_msg.model_name = self.agent_model_name
         
-        # stage 2
+        # maze 1
         xy_list = [
-            [0,0], [0.5,0.0],
-            [-0.5,1.0], [-0.5,-1.0], [-1.5,0.5], [-1.5,-0.5],
-            [1.0,1.5], [-1.5,1.5], [1.0,-1.5], [-1.5,-1.5]
+            [-1.5, 0.5], [-1.5, 1.5], [-0.5, 0.5], [-0.5, 1.5],
+            [0.5, -0.5], [0.5, -1.5], [2.5, -0.5], [2.5, 0.5],
+            [5.5,-1.5], [5.5,-0.5], [5.5,0.5], [5.5,1.5]
         ]
+        '''
+        # maze 2
+        xy_list = [
+            [-1.5,-1.5], [-0.5,-1.5], [-1.5,-0.5], 
+            [-0.5,1.5], [1.5,0.5], 
+            [2.5,2.5], [2.5,3.5], [1.5,3.5], 
+        ]
+
+        # maze 3
+        xy_list = [
+            [0,0], 
+            [0.5,0.5], [1.5,0.5], [0.5,1.5], [1.5,1.5],
+            [-0.5,-0.5], [-1.5,-0.5], [-1.5,-1.5],
+            [0.5,-0.5], [0.5,-1.5], [1.5,-1.5],
+            [-0.5,0.5], [-1.5,0.5], [-0.5,1.5], [-1.5,1.5],
+        ]
+        '''
+        
         pose = Pose()
         pose.position.x, pose.position.y = random.choice(xy_list)
 
@@ -119,31 +137,38 @@ class GoalController():
 
     def calcTargetPoint(self):
         self.deleteModel()
-        
-        # stage 2
-        
-        goal1_x_list = [1.5, 0, -1.5]
-        goal1_y_list = [0.5, -0.5]
 
-        goal2_y_list = [1.5, 0, -1.5]
-        goal2_x_list = [0.5, -0.5]
-        
+
+        # maze 1
+        goal_xy_list = [
+            [-1.5, 0.5], [-1.5, 1.5], [-0.5, 0.5], [-0.5, 1.5],
+            [0.5, -0.5], [0.5, -1.5], [2.5, -0.5], [2.5, 0.5],
+            [5.5,-1.5], [5.5,-0.5], [5.5,0.5], [5.5,1.5]
+        ]
+        """
         # maze 2
-        '''     
-        goal1_x_list = [2.5, -2.5]
-        goal1_y_list = [2.5, 1.5, 0.5, -0.5, -1.5, -2.5]
-
-        goal2_y_list = [2.5, -2.5]
-        goal2_x_list = [2.5, 1.5, 0.5, -0.5, -1.5, -2.5]
-        '''
-
+        goal_xy_list = [
+            [-1.5,-1.5], [-0.5,-1.5], [-1.5,-0.5], 
+            [-0.5,1.5], [1.5,0.5], 
+            [2.5,2.5], [2.5,3.5], [1.5,3.5], 
+        ]
+        
+        # maze 3
+        goal_xy_list = [
+            [0,0], 
+            [0.5,0.5], [1.5,0.5], [0.5,1.5], [1.5,1.5],
+            [-0.5,-0.5], [-1.5,-0.5], [-1.5,-1.5],
+            [0.5,-0.5], [0.5,-1.5], [1.5,-1.5],
+            [-0.5,0.5], [-1.5,0.5], [-0.5,1.5], [-1.5,1.5],
+        ]
+        
+        # maze3-maddness
+        goal_xy_list = [
+            [0,0], [-0.5,1.5], [0.5,1.5]
+        ]
+        """
         while True:
-            if random.choice([True, False]):
-                self.goal_position.position.y = random.choice(goal2_y_list)
-                self.goal_position.position.x = random.choice(goal2_x_list)
-            else:
-                self.goal_position.position.y = random.choice(goal1_y_list)
-                self.goal_position.position.x = random.choice(goal1_x_list)
+            self.goal_position.position.x, self.goal_position.position.y = random.choice(goal_xy_list)
 
             if self.last_goal_x != self.goal_position.position.x:
                 if self.last_goal_y != self.goal_position.position.y:
@@ -184,15 +209,14 @@ class MantisGymEnv():
 
         self.targetDistance = 0  # Distance to target
 
-        self.targetPointX = None
-        self.targetPointY = None
+        self.targetPointX = 0
+        self.targetPointY = 0
 
         # Means robot reached target point. True at beginning to calc random point in reset func
         self.isTargetReached = True
         self.goalCont = GoalController()
         self.agentController = AgentPosController()
 
-        self.timeCounter = 0  # Keep the time to give more reward if completing early
 
     def pauseGazebo(self):
         # Pause the simulation
@@ -274,7 +298,7 @@ class MantisGymEnv():
         isCrash = False  # If robot hit to an obstacle
         laserData = list(laserData.ranges)
         for i in range(len(laserData)):
-            if (self.laserMinRange > laserData[i] > 0):
+            if (self.minCrashRange > laserData[i] > 0):
                 isCrash = True
             if np.isinf(laserData[i]):
                 laserData[i] = self.laserMaxRange
@@ -300,31 +324,31 @@ class MantisGymEnv():
         self.velPub.publish(velCmd)
 
         """
-        if action == 0: #FORWARD
+        if action == 0: #BRAKE LEFT
             velCmd = Twist()
-            velCmd.linear.x = 0.2
-            velCmd.angular.z = 0.0
+            velCmd.linear.x = 0.17
+            velCmd.angular.z = 1.6
             self.velPub.publish(velCmd)
         elif action == 1: #LEFT
             velCmd = Twist()
-            velCmd.linear.x = 0.2
-            velCmd.angular.z = 1.0
+            velCmd.linear.x = 0.17
+            velCmd.angular.z = 0.8
             self.velPub.publish(velCmd)
-        elif action == 2: #RIGHT
+        elif action == 2: #FORWARD
             velCmd = Twist()
-            velCmd.linear.x = 0.2
-            velCmd.angular.z = -1.0
+            velCmd.linear.x = 0.17
+            velCmd.angular.z = 0.0
             self.velPub.publish(velCmd)
-        elif action == 3: #BRAKE LEFT
+        elif action == 3: #RIGHT
             velCmd = Twist()
-            velCmd.linear.x = 0.2
-            velCmd.angular.z = 2.2
+            velCmd.linear.x = 0.17
+            velCmd.angular.z = -0.8
             self.velPub.publish(velCmd)
         elif action == 4: #BRAKE RIGHT
             velCmd = Twist()
-            velCmd.linear.x = 0.2
-            velCmd.angular.z = -2.2
-            self.velPub.publish(velCmd)            
+            velCmd.linear.x = 0.17
+            velCmd.angular.z = -1.6
+            self.velPub.publish(velCmd)       
         """
         # Observe
         laserData = self.getLaserData()
@@ -344,11 +368,11 @@ class MantisGymEnv():
             self.isTargetReached = True
 
         if isCrash:
-            reward = -150 + self.timeCounter
+            reward = -150 # Default val -150
         elif self.isTargetReached:
             # Reached to target
             rospy.logwarn("Reached to target!")
-            reward = 200 + self.timeCounter
+            reward = 200
             self.targetPointX, self.targetPointY = self.goalCont.calcTargetPoint()
             self.isTargetReached = False
         else:
@@ -357,20 +381,17 @@ class MantisGymEnv():
             heading = state[-4]
 
             for i in range(self.actionSize):
-                angle = -math.pi / 4 + heading + \
-                    (math.pi / 8 * i) + math.pi / 2
-                tr = 1 - 4 * \
-                    math.fabs(0.5 - math.modf(0.25 + 0.5 * angle %
-                                              (2 * math.pi) / math.pi)[0])
+                angle = -math.pi / 4 + heading + (math.pi / 8 * i) + math.pi / 2
+                tr = 1 - 4 * math.fabs(0.5 - math.modf(0.25 + 0.5 * angle % (2 * math.pi) / math.pi)[0])
                 yawReward.append(tr)
 
             try:
                 distanceRate = 2 ** (currentDistance / self.targetDistance)
             except Exception:
-                distanceRate = int(2) ** (currentDistance // self.targetDistance)
                 print("Overflow err CurrentDistance = ", currentDistance, " TargetDistance = ", self.targetDistance)
+                distanceRate = 2 ** (currentDistance // self.targetDistance)
+                
             reward = ((round(yawReward[action] * 5, 2)) * distanceRate)
-            reward = reward + self.timeCounter
 
         return np.asarray(state), reward, done
 
@@ -378,16 +399,24 @@ class MantisGymEnv():
         # Resets the state of the environment and returns an initial observation.
         self.resetGazebo()
 
-        # Teleport turtlebot to a random point
-        agentX, agentY = self.agentController.teleportRandom()
+        while True:
+            # Teleport turtlebot to a random point
+            agentX, agentY = self.agentController.teleportRandom()
+            if self.calcDistance(self.targetPointX, self.targetPointY, agentX, agentY) > self.minCrashRange:
+                break
+            else:
+                rospy.logerr("Re teleporting the turtlebot!")
+                time.sleep(2)
 
         if self.isTargetReached:
             while True:
                 self.targetPointX, self.targetPointY = self.goalCont.calcTargetPoint()
-                self.isTargetReached = False
-                if self.calcDistance(self.targetPointX, self.targetPointY, agentX, agentY) > 1:
+                if self.calcDistance(self.targetPointX, self.targetPointY, agentX, agentY) > self.minCrashRange:
+                    self.isTargetReached = False
                     break
-                rospy.logerr("Re calculate target point!")
+                else:
+                    rospy.logerr("Re calculating target point!")
+                    time.sleep(2)
 
         # Unpause simulation to make observation
         self.unpauseGazebo()
