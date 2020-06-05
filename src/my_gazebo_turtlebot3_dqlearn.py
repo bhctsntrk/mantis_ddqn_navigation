@@ -222,7 +222,7 @@ class MantisGymEnv():
         isCrash = False  # If robot hit to an obstacle
         laserData = list(laserData.ranges)
         for i in range(len(laserData)):
-            if (self.laserMinRange > laserData[i] > 0):
+            if (self.minCrashRange > laserData[i] > 0):
                 isCrash = True
             if np.isinf(laserData[i]):
                 laserData[i] = self.laserMaxRange
