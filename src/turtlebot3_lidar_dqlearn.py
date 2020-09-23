@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from gazebo_turtlebot3_dqlearn import MantisGymEnv
+from gazebo_turtlebot3_dqlearn import Turtlebot3GymEnv
 
 import time
 import os
@@ -24,24 +24,24 @@ class Agent:
     '''
     def __init__(self, stateSize, actionSize):
         self.useConvNet = False  # Use Conv1D network
-        self.isTrainActive = True  # Train model (Make it False for just testing)
-        self.loadModel = False  # Load model from file
-        self.loadEpisodeFrom = 0  # Load Xth episode from file
+        self.isTrainActive = False  # Train model (Make it False for just testing)
+        self.loadModel = True  # Load model from file
+        self.loadEpisodeFrom = 8262  # Load Xth episode from file
         self.episodeCount = 40000  # Total episodes
         self.stateSize = stateSize  # Step size get from env
         self.actionSize = actionSize  # Action size get from env
         self.targetUpdateCount = 2000  # Update target model at every X step
         self.saveModelAtEvery = 10  # Save model at every X episode
         self.discountFactor = 0.99  # For qVal calculations
-        self.learningRate = 0.0003  # For model
+        self.learningRate = 0.0003  # For neural net model
         self.epsilon = 1.0  # Epsilon start value
-        self.epsilonDecay = 0.99  # To decay epsilon at every episode
-        self.epsilonMin = 0.05  # Epsilon never fall more than this
+        self.epsilonDecay = 0.99  # Epsilon decay value
+        self.epsilonMin = 0.05  # Epsilon minimum value
         self.batchSize = 64  # Size of a miniBatch
         self.learnStart = 100000  # Start to train model from this step
         self.memory = deque(maxlen=200000)  # Main memory to keep batches
         self.timeOutLim = 1400  # Maximum step size for each episode
-        self.savePath = '/tmp/mantisModel/'  # Model save path
+        self.savePath = '/tmp/turtlebot3Model/'  # Model save path
 
         # Conv1D ne can be used
         if not self.useConvNet:
@@ -206,7 +206,7 @@ if __name__ == '__main__':
     if LIVE_PLOT:
         score_plot = LivePlot()
 
-    env = MantisGymEnv()  # Create environment
+    env = Turtlebot3GymEnv()  # Create environment
 
     # get action and state sizes
     stateSize = env.stateSize
@@ -230,8 +230,9 @@ if __name__ == '__main__':
         done = False
         state = env.reset()
         score = 0
+        total_max_q = 0
 
-        for t in range(1,999999):
+        for step in range(1,999999):
             action = agent.calcAction(state)
             nextState, reward, done = env.step(action)
 
@@ -267,18 +268,22 @@ if __name__ == '__main__':
                 with open(paramPath, 'w') as outfile:
                     json.dump(paramDictionary, outfile)
 
-            if (t >= agent.timeOutLim):
+            total_max_q += np.max(agent.qValue)
+
+            if (step >= agent.timeOutLim):
                 print("Time out")
                 done = True
 
             if done:
                 agent.updateTargetModel()
 
+                avg_max_q = total_max_q / step
+
                 # Infor user
                 m, s = divmod(int(time.time() - startTime), 60)
                 h, m = divmod(m, 60)
 
-                print('Ep: {} | AvgMaxQVal: {:.2f} | CScore: {:.2f} | Mem: {} | Epsilon: {:.2f} | Time: {}:{}:{}'.format(episode, np.max(agent.qValue), score, len(agent.memory), agent.epsilon, h, m, s))
+                print('Ep: {} | AvgMaxQVal: {:.2f} | CScore: {:.2f} | Mem: {} | Epsilon: {:.2f} | Time: {}:{}:{}'.format(episode, avg_max_q, score, len(agent.memory), agent.epsilon, h, m, s))
                 
                 if LIVE_PLOT:
                     score_plot.update(episode, score, "Score", inform_text, updtScore=True)

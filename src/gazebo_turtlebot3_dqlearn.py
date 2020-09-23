@@ -216,14 +216,14 @@ class GoalController():
         return self.goal_position.position.x, self.goal_position.position.y
 
 
-class MantisGymEnv():
+class Turtlebot3GymEnv():
     '''
     Main Gazebo environment class
     Contains reset and step function
     '''
     def __init__(self):
         # Initialize the node
-        rospy.init_node('mantis_gym_env', anonymous=True)
+        rospy.init_node('turtlebot3_gym_env', anonymous=True)
 
         # Connect to gazebo
         self.velPub = rospy.Publisher('/cmd_vel', Twist, queue_size=5)
