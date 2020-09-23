@@ -62,12 +62,12 @@ and now you have a Ubuntu 18 image that includes everything. Go to ⚙ Run secti
 * Go to workspace dir and build workspace with ```catkin_make```.
 * Source the ROS and workspace. Execute(for ROS Melodic) ```source /opt/ros/melodic/setup.bash```. This will source ROS main packages. Execute ```source ~/'your_mantis_workspace_name'/devel/setup.bash``` to source Mantis workspace.
 * Check Mantis if it works. Execute ```roslaunch mantis_gazebo one_robot_launch.launch```. This will open a Gazebo with Mantis bot. Then press ```Ctrl+c``` and close.
-* Check Turtlebot3. Execute ```export TURTLEBOT3_MODEL=waffle``` because we will use waffle version of Turtlebot3. Then ```roslaunch turtlebot3_gazebo turtlebot3_empty_world.launch``` and check if the Gazebo with Turtlebot3 opens. If opens press ```Ctrl+c``` and close.
+* Check Turtlebot3. Execute ```export TURTLEBOT3_MODEL=waffle``` because we will use waffle version of Turtlebot3. Then ```roslaunch turtlebot3_gazebo turtlebot3_empty_world.launch``` and check if the Gazebo with Turtlebot3 opens. If opened and worked press ```Ctrl+c``` and close.
 * Open ```/opt/ros/melodic/share/turtlebot3_description/urdf/turtlebot3_waffle.gazebo.xacro``` this with some editor. Make ```<samples>24</samples>```. Because 360 laser point is too much for our neural net.
 * Do same to Mantis bot ```/root/mantis_ws/src/mantis/mantis_description/urdf/laser/hokuyo.xacro```.
 * Download this repo that contains special algorithm implementation. Put it to the same place with other mantis packages. Here is mine: ```/root/mantis_ws/src/mantis/mantis_ddqn_navigation```.
 * Build and source workspace again.
-* Now you can execute this ```roslaunch mantis_ddqn_navigation gazebo_turtlebot3_maze1.launch gui:=True``` or this ```roslaunch mantis_ddqn_navigation gazebo_mantis_maze1.launch gui:=True``` and it starts our bots in maze1 map. If opens press ```Ctrl+c``` and close.
+* Now you can execute this ```roslaunch mantis_ddqn_navigation gazebo_turtlebot3_maze1.launch gui:=True``` or this ```roslaunch mantis_ddqn_navigation gazebo_mantis_maze1.launch gui:=True``` and it starts our bots in maze1 map. If opened and worked press ```Ctrl+c``` and close.
 * Lastly, we need to build tf package from scratch because it is not working with Python3 in default.
 * Create a new workspace for tf package like ```mantis_ws_py3tf```.
 * Execute:
@@ -101,10 +101,14 @@ After setup envrionment, you can train your bot. I consider that you are using d
 * Go to *mantis_ddqn_navigation/src*  ```roscd mantis_ddqn_navigation/src/```. If this won't work then you have to execute source codes again.
 * There are three maze map *(maze1, maze2, maze3)*. Let consider that you work on maze1 with Turtlebot3.
 * Open *gazebo_turtlebot3_dqlearn.py* with editor like vim. Change SELECT_MAP parameter to ```SELECT_MAP = "maze1"```.
-* Open *turtlebot3_lidar_dqlearn.py*. There are a lot of parameters you have to set. Default parameters set to test 8262nd episode that I trained. You can find model files inside */tmp/mantisModel* in docker image.
-* Set parameters for training. All parameters have a comment line so it will be easy if you know DQN implementations.
-* Launch simulation in background with ```roslaunch mantis_ddqn_navigation gazebo_turtlebot3_maze1.launch gui:=True&```.
-* Launch Agent controller with ```python3 turtlebot3_lidar_dqlearn.py```. If you get ```ImportError: dynamic module does not define module export function (PyInit__tf2)``` error source py3tf again.
+* Open *turtlebot3_lidar_dqlearn.py*. There are a lot of parameters you have to set. Default parameters has been set to test 8262nd episode that I trained. You can find model files inside */tmp/mantisModel* in docker image.
+* Check *mantis_lidar_dqlearn.py* because it's parameters has been set for training. Copy parameters from there to set turtlebot3 parameters for trainining.
+* All parameters have a comment line so it will be easy if you know DQN implementations.
+* Launch simulation in background with ```roslaunch mantis_ddqn_navigation gazebo_turtlebot3_maze1.launch gui:=False&```.
+* ```gui:=False``` option will start Gazebo without GUI client. ```&``` execute scripts in background in shell. Without GUI client rendering, training will be faster.
+* Launch Agent controller with ```python3 turtlebot3_lidar_dqlearn.py&```. If you get ```ImportError: dynamic module does not define module export function (PyInit__tf2)``` error source py3tf again.
+* If you want to stop training execute ```fg``` and get *python3 turtlebot3_lidar_dqlearn.py* to foreground then press ```Ctrl+c``` and close.
+* If you want to see simulation execute ```gzclient``` and Gazebo GUI client window will be shown. Then you can close it with ```Ctrl+c```. Remember this won't close the main Gazebo server. If you want to close Gazebo server then *fg* to *roslaunch mantis_ddqn_navigation gazebo_turtlebot3_maze1.launch gui:=False* and press ```Ctrl+c```.
 
 ## :twisted_rightwards_arrows: Using w/ Different robots or versions
 You can use this implementation for different versions or robots but you have to change a lot of things:
