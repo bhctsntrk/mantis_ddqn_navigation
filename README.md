@@ -57,7 +57,7 @@ and now you have a Ubuntu 18 image that includes everything. Go to ⚙ Run secti
 * :bangbang: You can also use different ROS versions but you need to be sure that Turtlebot3 or Mantis works on that ROS version.
 * Install Python3.6 or different versions of Python3. (I tested with 3.6).
 * Install ROS Melodic. :grey_exclamation: This step may seem simple and short, but it will take a long time.
-* Run this [script](https://github.com/bhctsntrk/mantis_dqlearning/blob/master/docker_ready.sh). It includes pip and apt codes that install a lot of packages. Replace the parts that write *3.6* in the script if you use a different version of Python3 like 3.7.
+* Run this [script](https://github.com/bhctsntrk/mantis_ddqn_navigation/blob/master/docker_ready.sh). It includes pip and apt codes that install a lot of packages. Replace the parts that write *3.6* in the script if you use a different version of Python3 like 3.7.
 * Create a workspace and put [Mantis](https://github.com/yazgit-labs/mantis) in it like this ```/home/user/'your_mantis_workspace_name'/src/mantis/...mantis packages...```. Check [Docs](http://wiki.ros.org/catkin/Tutorials/create_a_workspace) if you don't have any idea bout ROS workspaces.
 * Go to workspace dir and build workspace with ```catkin_make```.
 * Source the ROS and workspace. Execute(for ROS Melodic) ```source /opt/ros/melodic/setup.bash```. This will source ROS main packages. Execute ```source ~/'your_mantis_workspace_name'/devel/setup.bash``` to source Mantis workspace.
@@ -65,9 +65,9 @@ and now you have a Ubuntu 18 image that includes everything. Go to ⚙ Run secti
 * Check Turtlebot3. Execute ```export TURTLEBOT3_MODEL=waffle``` because we will use waffle version of Turtlebot3. Then ```roslaunch turtlebot3_gazebo turtlebot3_empty_world.launch``` and check if the Gazebo with Turtlebot3 opens. If opens press ```Ctrl+c``` and close.
 * Open ```/opt/ros/melodic/share/turtlebot3_description/urdf/turtlebot3_waffle.gazebo.xacro``` this with some editor. Make ```<samples>24</samples>```. Because 360 laser point is too much for our neural net.
 * Do same to Mantis bot ```/root/mantis_ws/src/mantis/mantis_description/urdf/laser/hokuyo.xacro```.
-* Download this repo that contains special algorithm implementation. Put it to the same place with other mantis packages. Here is mine: ```/root/mantis_ws/src/mantis/mantis_dqlearning```.
+* Download this repo that contains special algorithm implementation. Put it to the same place with other mantis packages. Here is mine: ```/root/mantis_ws/src/mantis/mantis_ddqn_navigation```.
 * Build and source workspace again.
-* Now you can execute this ```roslaunch mantis_dqlearning gazebo_turtlebot3_maze1.launch gui:=True``` or this ```roslaunch mantis_dqlearning gazebo_mantis_maze1.launch gui:=True``` and it starts our bots in maze1 map. If opens press ```Ctrl+c``` and close.
+* Now you can execute this ```roslaunch mantis_ddqn_navigation gazebo_turtlebot3_maze1.launch gui:=True``` or this ```roslaunch mantis_ddqn_navigation gazebo_mantis_maze1.launch gui:=True``` and it starts our bots in maze1 map. If opens press ```Ctrl+c``` and close.
 * Lastly, we need to build tf package from scratch because it is not working with Python3 in default.
 * Create a new workspace for tf package like ```mantis_ws_py3tf```.
 * Execute:
@@ -98,12 +98,12 @@ After setup envrionment, you can train your bot. I consider that you are using d
 * ```source opt/ros/melodic/setup.bash```
 * ```source /root/mantis_ws/devel/setup.bash```
 * ```source /root/mantis_ws_py3tf/devel/setup.bash```
-* Go to *mantis_dqlearning/src*  ```roscd mantis_dqlearning/src/```. If this won't work then you have to execute source codes again.
+* Go to *mantis_ddqn_navigation/src*  ```roscd mantis_ddqn_navigation/src/```. If this won't work then you have to execute source codes again.
 * There are three maze map *(maze1, maze2, maze3)*. Let consider that you work on maze1 with Turtlebot3.
 * Open *gazebo_turtlebot3_dqlearn.py* with editor like vim. Change SELECT_MAP parameter to ```SELECT_MAP = "maze1"```.
 * Open *turtlebot3_lidar_dqlearn.py*. There are a lot of parameters you have to set. Default parameters set to test 8262nd episode that I trained. You can find model files inside */tmp/mantisModel* in docker image.
 * Set parameters for training. All parameters have a comment line so it will be easy if you know DQN implementations.
-* Launch simulation in background with ```roslaunch mantis_dqlearning gazebo_turtlebot3_maze1.launch gui:=True&```.
+* Launch simulation in background with ```roslaunch mantis_ddqn_navigation gazebo_turtlebot3_maze1.launch gui:=True&```.
 * Launch Agent controller with ```python3 turtlebot3_lidar_dqlearn.py```. If you get ```ImportError: dynamic module does not define module export function (PyInit__tf2)``` error source py3tf again.
 
 ## :twisted_rightwards_arrows: Using w/ Different robots or versions

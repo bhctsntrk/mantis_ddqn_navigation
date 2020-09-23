@@ -6,7 +6,7 @@
     <arg name="debug" value="false"/>
     <arg name="gui" value="false" />
     <arg name="headless" value="false"/>
-    <arg name="world_name" value="$(find mantis_dqlearning)/worlds/maze1.world"/>
+    <arg name="world_name" value="$(find mantis_ddqn_navigation)/worlds/maze1.world"/>
     <arg name="verbose" value="false"/>
   </include>
 
