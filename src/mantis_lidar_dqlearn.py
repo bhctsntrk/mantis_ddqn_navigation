@@ -9,7 +9,7 @@ import random
 import numpy as np
 from keras.models import Sequential, load_model
 from keras.optimizers import RMSprop
-from keras.layers import Dense, Dropout, Conv1D, Flatten, Reshape
+from keras.layers import Dense, Dropout
 from collections import deque
 
 import matplotlib.pyplot as plt
@@ -23,7 +23,6 @@ class Agent:
     Main class for agent
     '''
     def __init__(self, stateSize, actionSize):
-        self.useConvNet = False  # Use Conv1D network
         self.isTrainActive = True  # Train model (Make it False for just testing)
         self.loadModel = False  # Load model from file
         self.loadEpisodeFrom = 0  # Load Xth episode from file
@@ -43,13 +42,8 @@ class Agent:
         self.timeOutLim = 1400  # Maximum step size for each episode
         self.savePath = '/tmp/mantisModel/'  # Model save path
 
-        # Conv1D ne can be used
-        if not self.useConvNet:
-            self.onlineModel = self.initNetwork()
-            self.targetModel = self.initNetwork()
-        else:
-            self.onlineModel = self.initConvNetwork()
-            self.targetModel = self.initConvNetwork()
+        self.onlineModel = self.initNetwork()
+        self.targetModel = self.initNetwork()
 
         self.updateTargetModel()
 
@@ -72,28 +66,6 @@ class Agent:
         model.add(Dropout(0.3))
         model.add(Dense(self.actionSize, activation="linear", kernel_initializer="lecun_uniform"))
         model.compile(loss="mse", optimizer=RMSprop(lr=self.learningRate, rho=0.9, epsilon=1e-06))
-        model.summary()
-
-        return model
-
-    def initConvNetwork(self):
-        '''
-        Build CNN
-
-        return Keras CNN model
-        '''
-        model = Sequential()
-
-        model.add(Reshape((self.stateSize, 1), input_shape=(self.stateSize, )))
-        model.add(Conv1D(filters=16, kernel_size=5, strides=4, activation="relu"))
-        model.add(Conv1D(filters=32, kernel_size=3, strides=2, activation="relu"))
-
-        model.add(Flatten())
-
-        model.add(Dense(64, activation="relu"))
-        model.add(Dense(self.actionSize, activation="linear"))
-
-        model.compile(loss="mse", optimizer=RMSprop(lr=self.learningRate, rho=0.99, epsilon=0.1))
         model.summary()
 
         return model
